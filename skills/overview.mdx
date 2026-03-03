@@ -1,0 +1,81 @@
+---
+title: Built-in Skills Overview
+description: Learn about miniclaw's built-in skills system
+---
+
+## What are Skills?
+
+Skills are specialized slash commands that invoke specific agent behaviors in miniclaw. When you send a message starting with `/` followed by a skill name (like `/setup` or `/diff`), the agent loads that skill's instructions and follows them precisely.
+
+Skills are defined as markdown files with YAML frontmatter that specify:
+- **Name**: The command to invoke the skill
+- **Description**: What the skill does
+- **Allowed tools**: Which operations the agent can perform
+- **Behavior**: Step-by-step instructions the agent follows
+
+## How Skills Work
+
+Each skill is a markdown file located in `.claude/skills/<name>/SKILL.md` with this structure:
+
+```markdown
+---
+name: skill-name
+description: Brief description of what the skill does
+allowed-tools: "Tool1, Tool2(*)"
+---
+
+# Skill Instructions
+
+Detailed step-by-step instructions that the agent follows...
+```
+
+When you invoke a skill, the agent:
+1. Loads the skill's markdown content
+2. Restricts itself to only the allowed tools
+3. Follows the instructions step-by-step
+4. Cannot deviate from the prescribed behavior
+
+This makes skills predictable, safe, and purpose-built for specific tasks.
+
+## Built-in Skills
+
+miniclaw includes the following built-in skills:
+
+### `/setup`
+Interactive setup wizard for new users who just forked the repo. Guides you through installing dependencies, configuring environment variables, and setting up the background service.
+
+[Learn more →](/skills/setup)
+
+### `/commands`
+Registers all available skills as bot commands with Telegram, making them appear in the command menu when you type `/`.
+
+[Learn more →](/skills/commands)
+
+### `/restart`
+Rebuilds the miniclaw binary and restarts the background service (systemd or launchd) without manual intervention.
+
+[Learn more →](/skills/restart)
+
+### `/diff`
+Reviews your git diff, runs CI checks, analyzes changes, and suggests how to group them into logical commits.
+
+[Learn more →](/skills/diff)
+
+### `/transcribe`
+Transcribes audio/voice messages using the Groq Whisper API and responds to the transcribed text naturally.
+
+[Learn more →](/skills/transcribe)
+
+## Using Skills
+
+To invoke a skill, simply send a message to your miniclaw bot starting with `/` followed by the skill name:
+
+```bash
+/setup
+```
+
+The agent will load the skill and begin following its instructions. Skills run with restricted permissions—they can only use the tools explicitly allowed in their configuration.
+
+## Creating Custom Skills
+
+You can create your own skills by adding new `.claude/skills/<name>/SKILL.md` files to your fork. See the [Customization](/development/customization) guide for details on creating custom skills.

@@ -1,0 +1,384 @@
+---
+title: Scheduled Tasks
+description: Create recurring tasks, one-time reminders, and automated workflows
+---
+
+## Overview
+
+Miniclaw supports scheduled tasks that automatically execute prompts at specific times or intervals. Tasks are stored as JSON files and managed through conversation with the bot.
+
+## Creating Tasks
+
+You can create scheduled tasks by simply asking the bot:
+
+<Tabs>
+  <Tab title="Daily Task">
+    ```text
+You: Remind me to check emails every day at 9 AM
+
+Bot: I'll create a daily task that runs at 9:00 AM
+    ```
+  </Tab>
+  
+  <Tab title="One-Time Task">
+    ```text
+You: Remind me to submit the report tomorrow at 3 PM
+
+Bot: I'll create a one-time task for tomorrow at 3:00 PM
+    ```
+  </Tab>
+  
+  <Tab title="Interval Task">
+    ```text
+You: Check the server status every 6 hours
+
+Bot: I'll create a task that runs every 6 hours
+    ```
+  </Tab>
+</Tabs>
+
+The bot will:
+1. Understand your request
+2. Create the appropriate JSON file in `~/.miniclaw/data/tasks/`
+3. Confirm what was created
+
+## Task Types
+
+There are three types of scheduled tasks:
+
+### 1. Once (One-Time)
+
+Runs exactly once at a specific time, then deletes itself.
+
+```json
+{
+    "prompt": "Remind me about the meeting",
+    "chat_id": -1001234567890,
+    "type": "once",
+    "value": "",
+    "status": "active",
+    "next_run": "2026-03-04T15:00:00+08:00"
+}
+```
+
+**Use cases:**
+- One-time reminders
+- Scheduled reports
+- Delayed actions
+
+### 2. Cron (Schedule Expression)
+
+Runs on a recurring schedule using cron syntax.
+
+```json
+{
+    "prompt": "Check emails and summarise",
+    "chat_id": -1001234567890,
+    "type": "cron",
+    "value": "0 9 * * *",
+    "status": "active",
+    "next_run": "2026-03-04T09:00:00+08:00"
+}
+```
+
+**Cron format:** `minute hour day month weekday`
+
+<CodeGroup>
+```text Every day at 9 AM
+0 9 * * *
+```
+
+```text Every Monday at 10 AM
+0 10 * * 1
+```
+
+```text Every hour
+0 * * * *
+```
+
+```text Every 15 minutes
+*/15 * * * *
+```
+
+```text First day of month at midnight
+0 0 1 * *
+```
+</CodeGroup>
+
+**Use cases:**
+- Daily summaries
+- Weekly reports
+- Regular health checks
+- Periodic backups
+
+### 3. Interval (Duration-Based)
+
+Runs repeatedly after a fixed duration.
+
+```json
+{
+    "prompt": "Check server status",
+    "chat_id": -1001234567890,
+    "type": "interval",
+    "value": "6h",
+    "status": "active",
+    "next_run": "2026-03-04T12:00:00+08:00"
+}
+```
+
+**Duration formats:**
+- `30s` — 30 seconds
+- `5m` — 5 minutes
+- `2h` — 2 hours
+- `24h` — 24 hours
+- `7d` — 7 days
+
+**Use cases:**
+- Periodic monitoring
+- Regular polling
+- Frequent status checks
+
+## Task JSON Format
+
+Tasks are stored in `~/.miniclaw/data/tasks/` as individual JSON files:
+
+```json
+{
+    "prompt": "What to do when the task runs",
+    "chat_id": -1001234567890,
+    "type": "once|cron|interval",
+    "value": "schedule expression or duration",
+    "status": "active",
+    "next_run": "2026-03-04T09:00:00+08:00",
+    "expires": "2026-12-31T23:59:59+08:00"
+}
+```
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `prompt` | string | Yes | The instruction to execute when the task runs |
+| `chat_id` | integer | Yes | Which chat to send the result to (use `$MINICLAW_CHAT_ID`) |
+| `type` | string | Yes | Task type: `"once"`, `"cron"`, or `"interval"` |
+| `value` | string | Yes* | Cron expression or duration (empty for `"once"`) |
+| `status` | string | Yes | `"active"` or `"paused"` |
+| `next_run` | string | Yes | ISO 8601 timestamp of next execution |
+| `expires` | string | No | ISO 8601 timestamp for automatic deletion |
+
+<Note>
+`value` should be an empty string `""` for one-time tasks (`type: "once"`).
+</Note>
+
+## Timezone Handling
+
+Timezone handling is critical for scheduled tasks:
+
+<Steps>
+  <Step title="User timezone">
+    Your preferred timezone is defined in `preferences.md`. The agent interprets all time references in this timezone unless you specify otherwise.
+  </Step>
+  
+  <Step title="System timezone">
+    Cron expressions are evaluated in the **host's system local time**, which may differ from your timezone.
+  </Step>
+  
+  <Step title="Conversion">
+    The agent automatically converts your requested time to the host's timezone when creating cron tasks.
+  </Step>
+  
+  <Step title="Timestamps">
+    `next_run` timestamps include the correct UTC offset matching your timezone (e.g., `+08:00` for UTC+8).
+  </Step>
+</Steps>
+
+### Example: Timezone Conversion
+
+You're in **UTC+8** (Hong Kong), and the server is in **UTC**:
+
+```text
+You: Run this task every day at 8 AM my time
+```
+
+The agent creates:
+
+```json
+{
+    "type": "cron",
+    "value": "0 0 * * *",
+    "next_run": "2026-03-04T08:00:00+08:00"
+}
+```
+
+Note that the cron hour is `0` (midnight UTC), which equals 8 AM UTC+8.
+
+<Tip>
+To check the host's timezone, the agent runs: `date +%Z%:z`
+</Tip>
+
+## Managing Tasks
+
+### List Tasks
+
+```text
+You: Show me all scheduled tasks
+```
+
+The agent reads `~/.miniclaw/data/tasks/` and displays all tasks with their schedules and status.
+
+### Pause a Task
+
+```text
+You: Pause the daily email summary task
+```
+
+The agent sets the task's `status` to `"paused"`. The task remains in the system but won't execute.
+
+### Resume a Task
+
+```text
+You: Resume the email summary task
+```
+
+The agent sets `status` back to `"active"` and recalculates `next_run`.
+
+### Delete a Task
+
+```text
+You: Delete the server monitoring task
+```
+
+The agent deletes the JSON file from `~/.miniclaw/data/tasks/`.
+
+### Modify a Task
+
+```text
+You: Change the email summary to run at 10 AM instead of 9 AM
+```
+
+The agent edits the task's `value` field and recalculates `next_run`.
+
+## Task Expiration
+
+You can set an expiration date for tasks using the `expires` field:
+
+```json
+{
+    "prompt": "Weekly reminder",
+    "chat_id": -1001234567890,
+    "type": "cron",
+    "value": "0 9 * * 1",
+    "status": "active",
+    "next_run": "2026-03-10T09:00:00+08:00",
+    "expires": "2026-06-30T23:59:59+08:00"
+}
+```
+
+After the expiration time, the task is automatically deleted.
+
+**Use cases:**
+- Temporary reminders
+- Project-specific tasks
+- Time-limited monitoring
+
+## Task Execution
+
+The scheduler runs every interval (default: 1 minute) and checks for due tasks:
+
+<Steps>
+  <Step title="Check for due tasks">
+    Compare `next_run` with the current time
+  </Step>
+  
+  <Step title="Execute task">
+    Run the `prompt` through the agent as if you sent it as a message
+  </Step>
+  
+  <Step title="Send result">
+    Post the agent's response to the specified `chat_id`
+  </Step>
+  
+  <Step title="Reschedule or delete">
+    - **Once:** Delete the task
+    - **Cron:** Calculate next run time and update `next_run`
+    - **Interval:** Add the duration to current time and update `next_run`
+  </Step>
+</Steps>
+
+## Real-World Examples
+
+### Daily Morning Briefing
+
+```json
+{
+    "prompt": "Give me a summary of today: weather, top news, and my calendar",
+    "chat_id": -1001234567890,
+    "type": "cron",
+    "value": "0 7 * * *",
+    "status": "active",
+    "next_run": "2026-03-04T07:00:00+08:00"
+}
+```
+
+### Server Health Check
+
+```json
+{
+    "prompt": "Check if the production server is responding and report any issues",
+    "chat_id": -1001234567890,
+    "type": "interval",
+    "value": "30m",
+    "status": "active",
+    "next_run": "2026-03-03T14:30:00+08:00"
+}
+```
+
+### Weekly Report
+
+```json
+{
+    "prompt": "Analyze git commits from the past week and summarize the changes",
+    "chat_id": -1001234567890,
+    "type": "cron",
+    "value": "0 17 * * 5",
+    "status": "active",
+    "next_run": "2026-03-07T17:00:00+08:00"
+}
+```
+
+### One-Time Deadline Reminder
+
+```json
+{
+    "prompt": "The project proposal is due today! Have you submitted it?",
+    "chat_id": -1001234567890,
+    "type": "once",
+    "value": "",
+    "status": "active",
+    "next_run": "2026-03-15T09:00:00+08:00"
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use descriptive prompts" icon="message">
+    Write clear, specific instructions for what the task should do
+  </Card>
+  
+  <Card title="Set appropriate intervals" icon="clock">
+    Don't poll too frequently — balance timeliness with resource usage
+  </Card>
+  
+  <Card title="Add expiration dates" icon="calendar-xmark">
+    Use `expires` for temporary tasks to avoid clutter
+  </Card>
+  
+  <Card title="Monitor task execution" icon="chart-line">
+    Check that tasks are running as expected and adjust schedules if needed
+  </Card>
+</CardGroup>
+
+<Warning>
+Tasks execute in the same environment as your normal conversations. Ensure task prompts don't conflict with ongoing work or require interactive input.
+</Warning>

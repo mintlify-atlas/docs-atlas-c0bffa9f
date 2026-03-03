@@ -1,0 +1,85 @@
+---
+title: Commands Skill
+description: Register bot commands with Telegram
+---
+
+## Overview
+
+The `/commands` skill registers all available skills and built-in commands with Telegram's bot API. This makes them appear in the command menu when you type `/` in your chat with the bot.
+
+## Usage
+
+Send this command to your bot:
+
+```bash
+/commands
+```
+
+The skill is **idempotent**—running it multiple times simply overwrites the command list with the current set of available commands.
+
+## What It Does
+
+### 1. Discover Skills
+The skill scans `.claude/skills/` for all available skill directories and reads each `SKILL.md` file to extract:
+- Command name (from the `name` field)
+- Description (from the `description` field)
+
+### 2. Add Built-in Commands
+Combines discovered skills with these hardcoded commands that don't have SKILL.md files:
+- `/chatid` — Get your Telegram chat ID
+- `/cancel` — Cancel the current request
+- `/compact` — Compact conversation context to free up space
+
+### 3. Register with Telegram
+Calls the Telegram Bot API's `setMyCommands` endpoint:
+
+```bash
+curl -s https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands \
+  -H "Content-Type: application/json" \
+  -d '{"commands": [...]}'
+```
+
+### 4. Confirm Success
+Reports all registered commands and confirms the registration was successful.
+
+## Command List
+
+After running `/commands`, the following commands will appear in your Telegram chat menu:
+
+**Skills:**
+- `/setup` — Interactive setup wizard for new miniclaw users who just forked the repo
+- `/restart` — Rebuild miniclaw and restart the background service
+- `/diff` — Review git diff and suggest how to group and commit changes
+- `/transcribe` — Transcribe audio/voice files using Groq Whisper API
+- `/commands` — Register bot commands with Telegram so they appear in the command menu
+
+**Built-in Commands:**
+- `/chatid` — Get your Telegram chat ID
+- `/cancel` — Cancel the current request
+- `/compact` — Compact conversation context to free up space
+
+## Requirements
+
+- `TELEGRAM_BOT_TOKEN` must be configured in `~/.miniclaw/.env`
+- The bot must have permission to set commands (granted by default when creating bots via [@BotFather](https://t.me/BotFather))
+
+## Allowed Tools
+
+The commands skill can use:
+- `Bash(curl *)`: For making API calls to Telegram
+- `Bash(ls *)`: For listing skill directories
+
+## Telegram Command Limits
+
+Telegram enforces these limits on bot commands:
+- Maximum 100 commands per bot
+- Command names: 1-32 characters, lowercase letters, digits, and underscores only
+- Descriptions: Maximum 256 characters (automatically truncated if longer)
+
+## When to Use
+
+You should run `/commands` when:
+- Setting up miniclaw for the first time (or run `/setup` which offers to do this)
+- Adding new custom skills to your fork
+- Updating skill descriptions
+- Troubleshooting missing commands in the Telegram menu

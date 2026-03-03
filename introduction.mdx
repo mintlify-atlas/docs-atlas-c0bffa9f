@@ -1,0 +1,171 @@
+---
+title: Introduction
+description: A minimal and hackable Telegram bot wrapper for Claude CLI with persistent sessions and scheduled tasks
+---
+
+## What is miniclaw?
+
+miniclaw is a minimal [OpenClaw](https://github.com/openclaw/openclaw) alternative that wraps Claude CLI as a Telegram bot. It gives you a personal AI assistant with persistent conversations, file handling, and scheduled tasks — all through Telegram.
+
+<CardGroup cols={3}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install miniclaw with Go and set up your Telegram bot
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get from zero to a working bot in under 5 minutes
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/AaronCQL/miniclaw">
+    Fork it, read it in one sitting, and make it yours
+  </Card>
+</CardGroup>
+
+## Key features
+
+<AccordionGroup>
+  <Accordion title="Persistent sessions per chat">
+    Each Telegram chat gets its own conversation history with reply context. The bot remembers what you talked about and can reference previous messages.
+    
+    All session data is stored locally in `~/.miniclaw/data/` as JSON files.
+  </Accordion>
+
+  <Accordion title="Scheduled tasks">
+    Create cron jobs, intervals, or one-shot tasks as simple JSON files:
+    
+    ```json
+    {
+      "prompt": "Check emails and summarise",
+      "chat_id": -1001234567890,
+      "type": "cron",
+      "value": "0 9 * * *",
+      "status": "active",
+      "next_run": "2026-02-24T09:00:00Z"
+    }
+    ```
+    
+    The scheduler polls every 10 seconds and runs tasks when they're due.
+  </Accordion>
+
+  <Accordion title="File, image, and voice message support">
+    Send files and images directly to the bot — they're saved to `~/.miniclaw/workspace/files/` and passed to Claude with the message.
+    
+    <Tip>Voice messages are automatically transcribed using Groq's Whisper API if you provide a `GROQ_API_KEY`.</Tip>
+  </Accordion>
+
+  <Accordion title="Built-in and extensible skills">
+    Skills are markdown files that act as instructions for Claude. Built-in skills include:
+    
+    - `/setup` — Interactive setup wizard
+    - `/diff` — Show working directory changes
+    - `/restart` — Restart the miniclaw service
+    - `/transcribe` — Handle voice message transcription
+    - `/commands` — Register bot commands with Telegram
+    
+    Add your own by creating a `SKILL.md` in `.claude/skills/your-skill/`.
+  </Accordion>
+
+  <Accordion title="Real-time status updates">
+    Watch Claude work in real-time with live status messages showing which tools it's using:
+    
+    ```
+    ⚙️ bash (3) • read (2) • edit (1)
+    ```
+    
+    Enable with `SHOW_STATUS_UPDATES=true` in your `.env` file.
+  </Accordion>
+</AccordionGroup>
+
+## Philosophy: deliberately small
+
+miniclaw is intentionally tiny — not just for simplicity, but because **a small codebase means the agent can understand and modify its own source code at runtime**.
+
+The entire project is a handful of Go files with only three dependencies:
+- [`github.com/go-telegram-bot-api/telegram-bot-api/v5`](https://github.com/go-telegram-bot-api/telegram-bot-api) — Telegram bot API
+- [`github.com/robfig/cron/v3`](https://github.com/robfig/cron) — Cron parser for scheduled tasks
+- [`github.com/joho/godotenv`](https://github.com/joho/godotenv) — `.env` file loader
+
+Claude can read, edit, and rebuild miniclaw on the fly — adding features, fixing bugs, or adapting its own behaviour to whatever you need. **No plugin system required when your agent is the plugin system.**
+
+<Info>
+The agent runs from the `agent/` directory, which contains:
+- `CLAUDE.md` — System prompt defining agent behaviour, sandbox rules, and message formatting
+- `preferences.md` — Bot name, personality, timezone, and user preferences
+
+Edit these files to customize your bot's personality and behaviour.
+</Info>
+
+## Architecture overview
+
+miniclaw has two main concerns:
+
+1. **The Go application** — Telegram polling, session management, task scheduling, and the Claude CLI runner
+2. **The agent context** — System prompt and skills that shape how Claude behaves
+
+```
+.
+├── agent/                  # Claude's working directory
+│   ├── CLAUDE.md          # System prompt
+│   └── preferences.md     # Bot personality
+├── .claude/
+│   └── skills/            # Slash command definitions
+│       ├── setup/
+│       ├── diff/
+│       └── restart/
+├── cmd/miniclaw/          # Main entry point
+└── internal/              # Core logic
+    ├── app.go             # Main application
+    ├── telegram.go        # Telegram bot
+    ├── runner.go          # Claude CLI wrapper
+    ├── scheduler.go       # Task scheduler
+    └── session.go         # Session storage
+```
+
+At runtime, all state lives in `~/.miniclaw/`:
+- `.env` — Configuration
+- `data/` — Session history and scheduled tasks
+- `workspace/` — Scratch space for file operations
+
+<Warning>
+The agent is sandboxed to three locations:
+1. Its working directory (`.` — the `agent/` folder)
+2. `~/.miniclaw/` — Runtime data and workspace
+3. `../` — The parent repo directory (so it can modify its own code)
+
+It cannot access files outside these locations unless explicitly granted permission.
+</Warning>
+
+## Why miniclaw?
+
+<CardGroup cols={2}>
+  <Card title="Simple and hackable" icon="code">
+    Read the entire codebase in one sitting. No complex plugin system, no heavyweight framework.
+  </Card>
+  <Card title="Self-modifying agent" icon="wand-magic-sparkles">
+    Claude can edit its own source code, add features, and rebuild itself on the fly.
+  </Card>
+  <Card title="Persistent conversations" icon="comments">
+    Each chat remembers context. Reference previous messages, build on past conversations.
+  </Card>
+  <Card title="Scheduled automation" icon="clock">
+    Cron jobs, intervals, one-shot tasks — all as simple JSON files.
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<Steps>
+  <Step title="Install prerequisites">
+    Make sure you have Go 1.23+, Claude CLI, and a Telegram bot token ready.
+    
+    [View installation guide →](/installation)
+  </Step>
+  
+  <Step title="Run the setup wizard">
+    Clone the repo and run `claude`, then type `/setup` to walk through configuration.
+    
+    [View quickstart →](/quickstart)
+  </Step>
+  
+  <Step title="Customize your bot">
+    Edit `agent/preferences.md` to give your bot a name and personality.
+  </Step>
+</Steps>

@@ -1,0 +1,290 @@
+---
+title: Agent Customization
+description: Customize your miniclaw bot's personality, behavior, and system prompt
+---
+
+miniclaw's agent behavior is defined by two key files in the `agent/` directory. These files control everything from your bot's name and personality to how it formats messages and handles tasks.
+
+## Configuration Files
+
+The agent configuration lives in the `agent/` directory (or the path specified by `MINICLAW_AGENT_DIR`):
+
+```
+agent/
+├── CLAUDE.md        # System prompt and behavior rules
+└── preferences.md   # Bot personality and user preferences
+```
+
+## preferences.md: Personality & Settings
+
+This file defines your bot's identity, personality, and user-specific preferences. The agent reads this file at the start of every conversation.
+
+### Structure
+
+Here's the default `preferences.md`:
+
+```markdown
+# Preferences
+
+## Identity
+
+- Name: Enki
+- Personality: Helpful, concise, friendly
+
+## Settings
+
+- Timezone: UTC+8
+- Confirm before file changes: yes, except trivial 1-2 line changes where intent is obvious
+- Always respond to local command outputs with a brief confirmation
+- Bullet point style: •
+
+## User Preferences
+
+- Use British English spelling (e.g. summarise, colour, behaviour, personalise)
+- Store plan files in ~/.miniclaw/plans/; always tell the user the file path and show the full plan content after saving
+- For small file changes, show the exact addition/update in a code block after making it
+```
+
+### Customization Examples
+
+#### Change Bot Name and Personality
+
+```markdown
+## Identity
+
+- Name: Ada
+- Personality: Professional, detail-oriented, enthusiastic about automation
+```
+
+#### Adjust Timezone
+
+```markdown
+## Settings
+
+- Timezone: America/New_York
+```
+
+The timezone is used for scheduled tasks and time-based operations. Use IANA timezone format (e.g., `America/New_York`, `Europe/London`, `UTC+8`).
+
+#### Configure File Change Confirmations
+
+```markdown
+- Confirm before file changes: no
+```
+
+Set to `yes` to require confirmation before the agent creates, edits, or deletes files. Set to `no` for autonomous operation.
+
+#### Add Custom Preferences
+
+You can add any preferences you want the agent to remember:
+
+```markdown
+## User Preferences
+
+- Always use TypeScript for new projects
+- Prefer verbose error messages with stack traces
+- When creating REST APIs, always include OpenAPI documentation
+- Use poetry for Python dependency management
+```
+
+<Tip>
+  The agent can also update `preferences.md` itself. Just ask: "Remember that I prefer snake_case for Python variables" and it will add that to the file.
+</Tip>
+
+## CLAUDE.md: System Prompt
+
+This is the system prompt that defines the agent's core behavior, sandbox rules, and capabilities. It's loaded by Claude CLI and shapes how the agent operates.
+
+### Key Sections
+
+#### Sandbox Rules
+
+The agent is restricted to three locations:
+
+1. Current working directory (`.`) — for reading `preferences.md`
+2. `~/.miniclaw/` — for runtime data and workspace operations
+3. `../` — the parent repo directory (to modify miniclaw itself)
+
+```markdown
+You may ONLY access these three locations:
+
+1. Your current working directory (.) — for preferences.md
+2. ~/.miniclaw/ — for runtime data and workspace operations  
+3. ../ — the parent repo directory
+
+You MUST NOT read, write, or access any files or directories 
+outside of these three locations unless the user explicitly 
+grants permission.
+```
+
+This ensures the agent can't accidentally access sensitive files outside its designated workspace.
+
+#### Behavior Guidelines
+
+- Always reads `preferences.md` at startup
+- Matches tone and verbosity from personality settings
+- Uses `~/.miniclaw/workspace/` for file operations (downloads, git clones, etc.)
+- Asks questions directly in responses (never uses `AskUserQuestion` tool)
+
+#### Long-Running Processes
+
+The agent uses tmux to manage background processes:
+
+```bash
+# Start a dev server
+tmux new-session -d -s mc-devserver 'npm run dev'
+
+# List agent-managed sessions
+tmux ls | grep ^mc-
+
+# Check output
+tmux capture-pane -t mc-devserver -p
+
+# Stop a session
+tmux kill-session -t mc-devserver
+```
+
+All agent-managed sessions use the `mc-` prefix.
+
+#### Scheduled Tasks
+
+The agent manages scheduled tasks as JSON files in `~/.miniclaw/data/tasks/`:
+
+```json
+{
+  "prompt": "Check emails and summarise",
+  "chat_id": -1001234567890,
+  "type": "cron",
+  "value": "0 9 * * *",
+  "status": "active",
+  "next_run": "2026-02-24T09:00:00Z"
+}
+```
+
+**Task Types:**
+- `once` — Run once at `next_run`
+- `cron` — Repeat on a cron schedule (e.g., `0 9 * * *` for 9 AM daily)
+- `interval` — Repeat at fixed intervals (e.g., `24h`, `30m`)
+
+### Message Formatting (Critical)
+
+<Warning>
+  miniclaw sends agent responses directly to Telegram using HTML parse mode. The agent MUST use Telegram HTML tags, not Markdown.
+</Warning>
+
+#### Supported HTML Tags
+
+```html
+<b>bold</b>
+<i>italic</i>
+<u>underline</u>
+<s>strikethrough</s>
+<code>inline code</code>
+<pre>code block</pre>
+<pre><code class="language-python">syntax highlighted code</code></pre>
+<a href="http://example.com">link</a>
+<blockquote>block quote</blockquote>
+<tg-spoiler>spoiler</tg-spoiler>
+```
+
+#### Formatting Rules
+
+From `CLAUDE.md`:
+
+- **EVERY response must use HTML tags for formatting** — no Markdown syntax
+- All HTML special characters must be escaped: `&lt;` `&gt;` `&amp;`
+- Tags must be properly nested and closed
+- For plain text with no formatting, just send plain text (no tags needed)
+- **NEVER use Markdown syntax** (no `*`, `**`, `` ` ``, ` ``` `, `#`, etc.)
+- Newlines are preserved as-is (no `<br>` needed)
+- Use the bullet point style from `preferences.md` (default: `•`)
+
+## Customizing the System Prompt
+
+You can edit `agent/CLAUDE.md` to change core behaviors:
+
+### Example: Add Custom Tools
+
+```markdown
+## Custom Tools
+
+When the user asks to deploy, use this workflow:
+1. Run tests with `make test`
+2. Build with `make build`  
+3. Deploy with `./scripts/deploy.sh`
+4. Confirm deployment with a status check
+```
+
+### Example: Change Sandbox Rules
+
+To grant access to additional directories:
+
+```markdown
+You may ONLY access these locations:
+
+1. Your current working directory (.) — for preferences.md
+2. ~/.miniclaw/ — for runtime data and workspace operations
+3. ../ — the parent repo directory
+4. ~/projects/ — for user project files
+```
+
+### Example: Modify Task Behavior
+
+Customize how scheduled tasks work:
+
+```markdown
+## Scheduled Tasks
+
+Before executing any scheduled task:
+1. Check system load with `uptime`
+2. Only proceed if load average < 2.0
+3. Log task start to ~/.miniclaw/data/task-log.txt
+```
+
+<Note>
+  Changes to `CLAUDE.md` take effect immediately on the next agent invocation. No restart required.
+</Note>
+
+## Self-Modification
+
+One of miniclaw's unique features is that the agent can modify its own configuration:
+
+```
+You: Remember to always use emojis when summarizing
+Agent: I'll update my preferences to include that.
+```
+
+The agent will edit `preferences.md` to add your request. You can also ask it to modify `CLAUDE.md`:
+
+```
+You: Update your system prompt to always check git status before committing
+Agent: I'll add that rule to CLAUDE.md.
+```
+
+This makes miniclaw highly adaptable — you can shape its behavior through conversation rather than manual file editing.
+
+## Testing Changes
+
+After modifying `preferences.md` or `CLAUDE.md`, test your changes:
+
+1. Send a message to your bot on Telegram
+2. The agent reads both files at startup
+3. Observe if behavior matches your changes
+
+If something doesn't work as expected, check the logs or ask the agent:
+
+```
+You: What's in your preferences.md?
+Agent: [displays current preferences]
+```
+
+## User Profile
+
+The agent can also maintain a user profile at `~/.miniclaw/data/user.md`:
+
+- Created automatically when the agent learns about you
+- Contains personality traits, background, preferences
+- Updated over time as the agent learns more
+- Read at startup to provide personalized interactions
+
+You don't need to manually edit this file — the agent manages it based on your conversations.

@@ -1,0 +1,128 @@
+---
+title: Restart Skill
+description: Rebuild and restart the miniclaw service
+---
+
+## Overview
+
+The `/restart` skill rebuilds the miniclaw binary from source and restarts the background service (systemd on Linux, launchd on macOS). It's designed to safely restart the agent without manual intervention, even though the restart kills the current process.
+
+## Usage
+
+Send this command to your bot:
+
+```bash
+/restart
+```
+
+<Warning>
+The restart command will kill the current miniclaw process (including the Claude subprocess handling your request). This is expected behavior. You'll receive a confirmation message ~10 seconds later when the new process starts.
+</Warning>
+
+## What It Does
+
+### 1. Load Environment and Detect Platform
+- Sources `~/.miniclaw/.env` to load configuration
+- Runs `uname -s` to detect platform (Darwin for macOS, Linux for Linux)
+- Determines which restart command to use
+
+### 2. Rebuild the Binary
+- Runs `go install $MINICLAW_AGENT_DIR/../cmd/miniclaw/`
+- Compiles and installs the updated binary to `$GOPATH/bin`
+- Stops if the build fails
+
+### 3. Schedule Post-Restart Confirmation
+Creates a scheduled task for each chat ID in `ALLOWED_CHAT_IDS` that fires 10 seconds after restart:
+
+**Linux:**
+```bash
+TIMESTAMP=$(date -u -d '+10 seconds' --iso-8601=seconds)
+```
+
+**macOS:**
+```bash
+TIMESTAMP=$(date -u -v+10S +%Y-%m-%dT%H:%M:%SZ)
+```
+
+The task file is written to `~/.miniclaw/data/tasks/restart-confirmation-<chat_id>.json`:
+
+```json
+{
+    "prompt": "Send a short message confirming that miniclaw has been rebuilt and restarted successfully. Keep it to one or two lines.",
+    "chat_id": <chat_id>,
+    "type": "once",
+    "value": "",
+    "status": "active",
+    "next_run": "<timestamp>"
+}
+```
+
+### 4. Restart the Service
+
+**Linux (systemd):**
+```bash
+systemctl --user restart miniclaw
+```
+
+**macOS (launchd):**
+```bash
+launchctl kickstart -k gui/$(id -u)/com.miniclaw.agent
+```
+
+<Note>
+Nothing executes after the restart command—the process is killed immediately. The confirmation task runs when the new process starts.
+</Note>
+
+## Requirements
+
+- miniclaw must be running as a background service (systemd or launchd)
+- `MINICLAW_AGENT_DIR` must be set in `~/.miniclaw/.env`
+- `ALLOWED_CHAT_IDS` must be configured for confirmation messages
+- Go must be available to rebuild the binary
+
+## Use Cases
+
+- **After code changes**: Rebuild and deploy changes to the running bot
+- **Configuration updates**: Some config changes require a restart to take effect
+- **Troubleshooting**: Restart if the bot becomes unresponsive
+- **Updates**: After pulling updates from the upstream repo
+
+## Allowed Tools
+
+The restart skill can use:
+- `Bash(source *)`: For loading environment variables
+- `Bash(go install *)`: For rebuilding the binary
+- `Bash(date *)`: For calculating timestamps
+- `Bash(cat *)`: For writing task files
+- `Bash(uname *)`: For platform detection
+- `Bash(systemctl --user restart miniclaw)`: For restarting on Linux
+- `Bash(launchctl *)`: For restarting on macOS
+
+## Troubleshooting
+
+### No confirmation message after 10 seconds
+
+Check the service status:
+
+**Linux:**
+```bash
+systemctl --user status miniclaw
+journalctl --user -u miniclaw -n 50
+```
+
+**macOS:**
+```bash
+launchctl list | grep com.miniclaw.agent
+tail -n 50 /tmp/miniclaw.log
+```
+
+### Build failures
+
+If the build fails, the restart is aborted and you'll receive an error message. Common causes:
+- Syntax errors in Go code
+- Missing dependencies (run `go mod tidy`)
+- Wrong `MINICLAW_AGENT_DIR` path
+
+### Service not configured
+
+If you haven't set up systemd or launchd, run `/setup` first to configure the background service.

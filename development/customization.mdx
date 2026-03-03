@@ -1,0 +1,405 @@
+---
+title: Customization
+description: Make miniclaw your own
+---
+
+miniclaw is designed to be easily modified. The small codebase and the agent's self-modification capability mean you can customize behaviour through conversation or by editing the source directly.
+
+## Agent Customization
+
+### Personality and Preferences
+
+Edit `agent/preferences.md` to change:
+
+- Agent name and personality
+- Timezone (affects scheduled tasks)
+- Confirmation behaviour (ask before file changes)
+- Bullet point style
+- Response verbosity
+
+```markdown
+# Preferences
+
+## Identity
+
+- Name: Enki
+- Personality: Helpful, concise, friendly
+
+## Settings
+
+- Timezone: UTC+8
+- Confirm before file changes: yes
+- Bullet point style: •
+```
+
+You can also tell the agent directly: "Remember to always use emojis" or "Your name is now Atlas". The agent will update `preferences.md` automatically.
+
+### System Prompt
+
+Edit `agent/CLAUDE.md` to change core behaviour:
+
+- Sandbox rules (which directories the agent can access)
+- Message formatting (Telegram HTML rules)
+- Scheduled task handling
+- Long-running process management (tmux)
+- User profile tracking
+
+**Example:** Add a new tool restriction:
+
+```markdown
+## Behaviour
+
+- ALWAYS read ./preferences.md at startup
+- NEVER use the WebSearch tool without explicit permission
+- When downloading files, always scan with ClamAV first
+```
+
+### Self-Modification
+
+The agent can edit its own code. Try:
+
+> "Add a command that shows the current memory usage"
+
+The agent will:
+1. Read the relevant Go files
+2. Implement the feature
+3. Run `go build`
+4. Restart itself with `/restart`
+
+This works because:
+- The agent can access `../` (the repo directory)
+- It has the `/restart` skill that rebuilds and restarts miniclaw
+- The codebase is small enough to fit in context
+
+## Creating Custom Skills
+
+Skills are slash commands defined as markdown files with instructions for Claude to follow.
+
+### Skill Structure
+
+Create a new directory in `.claude/skills/` with a `SKILL.md` file:
+
+```
+.claude/skills/
+└── your-skill/
+    └── SKILL.md
+```
+
+### Skill Format
+
+Use YAML frontmatter to define metadata, followed by instructions:
+
+```markdown
+---
+name: your-skill
+description: Brief description for the command menu
+allowed-tools: "Read, Bash(git *), WebSearch"
+disable-model-invocation: false
+---
+
+# Your Skill Name
+
+Instructions for Claude to follow when this skill is invoked.
+
+## Step 1: Do something
+
+Describe what the agent should do first.
+
+## Step 2: Do something else
+
+More instructions.
+```
+
+### Frontmatter Options
+
+- **`name`** (required) — Slash command name (e.g., `/your-skill`)
+- **`description`** (required) — Shown in Telegram command menu
+- **`allowed-tools`** (optional) — Comma-separated list of tools the agent can use
+  - Use `*` for wildcards: `"Bash(git *)"` allows all git commands
+  - Restricts the agent to only these tools during skill execution
+- **`disable-model-invocation`** (optional) — If `true`, the agent cannot call the model recursively (useful for fully scripted workflows)
+
+### Example: Backup Skill
+
+Create `.claude/skills/backup/SKILL.md`:
+
+```markdown
+---
+name: backup
+description: Create a backup of session data and tasks
+allowed-tools: "Bash(tar *), Bash(date *), Bash(ls *)"
+---
+
+# Backup Skill
+
+Create a timestamped backup of miniclaw data.
+
+## Step 1: Create backup directory
+
+Run: `mkdir -p ~/.miniclaw/backups`
+
+## Step 2: Generate timestamp
+
+Run: `date +%Y%m%d-%H%M%S`
+
+Store the output as `TIMESTAMP`.
+
+## Step 3: Create archive
+
+Run:
+
+```bash
+tar -czf ~/.miniclaw/backups/backup-$TIMESTAMP.tar.gz \
+  -C ~/.miniclaw/data .
+```
+
+## Step 4: Report
+
+Tell the user the backup was created at `~/.miniclaw/backups/backup-$TIMESTAMP.tar.gz`.
+
+List all backups: `ls -lh ~/.miniclaw/backups/`
+```
+
+Users can now run `/backup` to create timestamped backups.
+
+### Example: Status Skill
+
+Create `.claude/skills/status/SKILL.md`:
+
+```markdown
+---
+name: status
+description: Show system status and running processes
+allowed-tools: "Bash(uptime), Bash(tmux ls), Bash(ps *), Bash(df *)"
+---
+
+# Status Skill
+
+Show system health and running processes.
+
+## Step 1: System uptime
+
+Run: `uptime`
+
+## Step 2: Disk usage
+
+Run: `df -h ~/.miniclaw/`
+
+## Step 3: Running tmux sessions
+
+Run: `tmux ls | grep ^mc-`
+
+If any sessions exist, list them. If none, report "No long-running processes."
+
+## Step 4: Format report
+
+Present as:
+
+```
+System Status
+
+Uptime: [result]
+Disk: [usage]
+Processes: [sessions or "None"]
+```
+```
+
+### Registering Skills
+
+After creating a skill, register it with Telegram:
+
+```bash
+miniclaw
+# In Telegram, send:
+/commands
+```
+
+This scans `.claude/skills/` and updates the bot's command menu.
+
+## Adding Custom Tools
+
+miniclaw uses the Claude CLI's built-in tools (Read, Edit, Write, Bash, Grep, Glob, WebSearch, WebFetch, Task). You cannot add custom tools without modifying the CLI itself.
+
+However, you can:
+- **Wrap functionality in skills** — Create a skill that uses Bash to invoke external programs
+- **Modify `agent/CLAUDE.md`** — Add patterns for common operations (e.g., "When asked to X, do Y")
+
+### Example: Custom Notification Tool
+
+Instead of a tool, create a skill that uses `curl` to send notifications:
+
+```markdown
+---
+name: notify
+description: Send a notification to your phone
+allowed-tools: "Bash(curl *)"
+---
+
+# Notify Skill
+
+Send a push notification via ntfy.sh.
+
+## Step 1: Extract message
+
+The user's message after `/notify` is the notification text.
+
+## Step 2: Send notification
+
+Run:
+
+```bash
+curl -d "$MESSAGE" https://ntfy.sh/your-topic
+```
+
+## Step 3: Confirm
+
+Tell the user the notification was sent.
+```
+
+## Running Long-Running Processes
+
+miniclaw uses tmux to run processes that need to stay alive after the agent exits.
+
+### Starting a Process
+
+From a conversation:
+
+> "Start a local web server on port 8080"
+
+The agent will:
+
+```bash
+tmux new-session -d -s mc-webserver 'python3 -m http.server 8080'
+```
+
+### Checking Status
+
+List agent-managed sessions:
+
+```bash
+tmux ls | grep ^mc-
+```
+
+Capture output:
+
+```bash
+tmux capture-pane -t mc-webserver -p
+```
+
+### Stopping a Process
+
+```bash
+tmux kill-session -t mc-webserver
+```
+
+### Rules
+
+- All agent-managed tmux sessions MUST start with `mc-`
+- Never touch sessions without the `mc-` prefix — they belong to the user
+- Use descriptive names: `mc-webserver`, `mc-webpack-watch`, `mc-postgres`
+
+## Custom Commands via Telegram
+
+You can implement custom behaviour without creating skills by modifying `internal/telegram.go`.
+
+### Example: Add a `/ping` Command
+
+Edit `internal/telegram.go`, find the `handleSpecialCommands` method, and add:
+
+```go
+if content == "/ping" {
+    b.bot.SendMessage(chatID, "Pong!", nil)
+    return true
+}
+```
+
+Rebuild and restart:
+
+```bash
+go install ./cmd/miniclaw/
+systemctl --user restart miniclaw  # or launchctl kickstart on macOS
+```
+
+## Modifying the Scheduler
+
+The scheduler runs tasks from `~/.miniclaw/data/tasks/*.json`. To change scheduling behaviour, edit `internal/scheduler.go`.
+
+### Example: Add Task Priority
+
+1. Add a `Priority` field to `internal/models/task.go`:
+
+```go
+type Task struct {
+    Filename      string  `json:"-"`
+    Prompt        string  `json:"prompt"`
+    ChatID        int64   `json:"chat_id"`
+    Priority      int     `json:"priority"`  // New field
+    ScheduleType  string  `json:"type"`
+    ScheduleValue string  `json:"value"`
+    Status        string  `json:"status"`
+    NextRun       *string `json:"next_run"`
+    Expires       *string `json:"expires,omitempty"`
+}
+```
+
+2. Sort tasks by priority in `internal/scheduler.go`:
+
+```go
+import "sort"
+
+func (s *Scheduler) executeDueTasks(ctx context.Context) {
+    tasks, err := s.loadTasks()
+    if err != nil {
+        log.Printf("error loading tasks: %v", err)
+        return
+    }
+
+    // Sort by priority (higher = more urgent)
+    sort.Slice(tasks, func(i, j int) bool {
+        return tasks[i].Priority > tasks[j].Priority
+    })
+
+    // Execute tasks...
+}
+```
+
+3. Update `agent/CLAUDE.md` to document the new field:
+
+```markdown
+## Scheduled Tasks
+
+Fields:
+- priority: (optional) Higher values run first if multiple tasks are due (default: 0)
+```
+
+## Environment-Specific Configuration
+
+You can check the environment in skills or the system prompt:
+
+### Conditional Behaviour in Skills
+
+```markdown
+## Step 1: Check environment
+
+Run: `echo $MINICLAW_ENV`
+
+If the result is "production":
+- Do X
+
+If the result is "development":
+- Do Y
+```
+
+Set `MINICLAW_ENV` in `~/.miniclaw/.env`:
+
+```bash
+MINICLAW_ENV=production
+```
+
+## Tips
+
+- **Start small** — Modify preferences and skills before changing Go code
+- **Test in a fork** — Make a copy of the repo to experiment
+- **Use the agent** — Ask Claude to implement features for you
+- **Keep it simple** — The power of miniclaw is its simplicity; resist adding complexity
+- **Version control** — Commit your customizations so you can revert if needed

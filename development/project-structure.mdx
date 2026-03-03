@@ -1,0 +1,257 @@
+---
+title: Project Structure
+description: Understanding miniclaw's codebase organization
+---
+
+miniclaw is deliberately small — the entire codebase is less than 2,000 lines of Go across a handful of files. This small footprint means Claude can read, understand, and modify the entire project at runtime.
+
+## Directory Layout
+
+```
+miniclaw/
+├── cmd/
+│   └── miniclaw/
+│       └── main.go          # Application entry point
+├── internal/
+│   ├── models/              # Data models
+│   │   ├── agent.go         # AgentInput/AgentOutput
+│   │   ├── message.go       # Telegram message representation
+│   │   └── task.go          # Scheduled task model
+│   ├── app.go               # Main application coordinator
+│   ├── config.go            # Configuration loading
+│   ├── runner.go            # Claude CLI wrapper
+│   ├── scheduler.go         # Task scheduling engine
+│   ├── session.go           # Conversation session persistence
+│   ├── status.go            # Status message tracking
+│   └── telegram.go          # Telegram bot integration
+├── agent/
+│   ├── CLAUDE.md            # Agent system prompt
+│   └── preferences.md       # Agent personality and settings
+├── .claude/
+│   └── skills/              # Slash command definitions
+│       ├── commands/
+│       ├── diff/
+│       ├── restart/
+│       ├── setup/
+│       └── transcribe/
+├── go.mod                   # Go module definition
+└── README.md
+```
+
+## Core Packages
+
+### `cmd/miniclaw/main.go`
+
+The entry point. Just 23 lines:
+
+1. Load configuration from `~/.miniclaw/.env`
+2. Create the `App` instance
+3. Start the application with graceful shutdown on SIGTERM/SIGINT
+
+Relevant code: [cmd/miniclaw/main.go:14-21](~/workspace/source/cmd/miniclaw/main.go)
+
+### `internal/config.go`
+
+Handles configuration loading:
+
+- **`HomeDir()`** — Creates `~/.miniclaw/` directory structure (data, tasks, workspace)
+- **`AgentDir()`** — Resolves the agent directory from `MINICLAW_AGENT_DIR` or `./agent/`
+- **`LoadConfig()`** — Reads environment variables and constructs the `Config` struct
+
+Configuration is loaded from `~/.miniclaw/.env` using [godotenv](https://github.com/joho/godotenv).
+
+### `internal/app.go`
+
+The main application coordinator. Manages:
+
+- **Per-chat state** — Each chat gets its own mutex to serialize agent runs
+- **Message routing** — Routes incoming Telegram messages to the agent runner
+- **Status updates** — Tracks tool use and sends real-time status messages
+- **Cancellation** — Allows users to cancel running agents via `/cancel`
+- **Restart command** — Handles `/restart` to rebuild and restart miniclaw
+
+Key methods:
+- `onMessage()` — Called by TelegramBot when a message arrives
+- `runQueued()` — Acquires per-chat mutex and runs the agent
+- `startAgent()` — Handles typing indicators, status tracking, and response delivery
+
+### `internal/runner.go`
+
+Wraps the Claude CLI:
+
+- Executes `claude` with `--output-format stream-json`
+- Parses streaming JSON events to extract tool use and results
+- Manages session persistence (resume previous conversations)
+- Builds prompts with reply context and file attachments
+- Provides `onToolUse` callback for real-time status updates
+
+The runner uses `os/exec` to spawn `claude` as a subprocess. It streams stdout line-by-line, parsing JSON events to detect:
+- `system` events with `session_id` (for persistence)
+- `assistant` events with `tool_use` blocks (for status tracking)
+- `result` events with the final response text
+
+Relevant code: [internal/runner.go:65-158](~/workspace/source/internal/runner.go)
+
+### `internal/scheduler.go`
+
+The task scheduling engine:
+
+- Polls `~/.miniclaw/data/tasks/*.json` every 10 seconds
+- Executes tasks when `next_run` is in the past
+- Supports three schedule types:
+  - **`once`** — Run once at `next_run`, then delete
+  - **`cron`** — Standard cron expression (parsed by [robfig/cron](https://github.com/robfig/cron))
+  - **`interval`** — Duration string like `24h`, `1h30m`
+- Handles expiration — tasks with an `expires` timestamp are automatically deleted
+- Reschedules recurring tasks after execution
+
+Relevant code: [internal/scheduler.go:48-105](~/workspace/source/internal/scheduler.go)
+
+### `internal/session.go`
+
+Persists Claude CLI session IDs to `~/.miniclaw/data/sessions.json`. This allows conversations to maintain context across multiple messages — Claude remembers the chat history.
+
+### `internal/telegram.go`
+
+Integrates with Telegram using [gotgbot](https://github.com/PaulSonOfLars/gotgbot):
+
+- Polls for updates (messages, commands, files)
+- Downloads file attachments to `~/.miniclaw/workspace/files/`
+- Handles reply context (extracts content and file path from replied-to messages)
+- Sends responses, edits status messages, and manages typing indicators
+- Implements special commands (`/chatid`, `/cancel`)
+
+### `internal/status.go`
+
+Tracks tool use and renders status messages. When `SHOW_STATUS_UPDATES=true`, the agent's tool calls are displayed in real-time as:
+
+```
+Read: config.go
+Edit: config.go
+Bash: go build
+```
+
+Status messages are debounced to avoid hitting Telegram's rate limits.
+
+### `internal/models/`
+
+Data models:
+- **`AgentInput`** — User prompt, file path, reply context, chat ID
+- **`AgentOutput`** — Result text, status, error
+- **`Message`** — Internal message representation from Telegram
+- **`Task`** — Scheduled task with prompt, schedule, and metadata
+
+## Agent Directory (`agent/`)
+
+This is where Claude runs from. It contains:
+
+- **`CLAUDE.md`** — The agent's system prompt, defining:
+  - Sandbox rules (only access `.`, `~/.miniclaw/`, `../`)
+  - Behaviour (read preferences at startup, use HTML formatting)
+  - Long-running process management (tmux)
+  - Scheduled task creation
+  - Message formatting rules (Telegram HTML)
+- **`preferences.md`** — Agent personality, timezone, confirmation settings
+
+When you tell the agent "remember to always..." or "your name is...", it updates `preferences.md`.
+
+## Skills Directory (`.claude/skills/`)
+
+Each skill is a directory containing a `SKILL.md` file. These are slash commands that Claude follows as instructions. Skills use YAML frontmatter to define:
+
+```yaml
+---
+name: setup
+description: Interactive setup wizard
+allowed-tools: "Read, Edit, Bash(...)"
+disable-model-invocation: true
+---
+```
+
+Built-in skills:
+- **`commands`** — Register bot commands with Telegram
+- **`diff`** — Show git diff of uncommitted changes
+- **`restart`** — Rebuild and restart miniclaw
+- **`setup`** — Interactive setup wizard
+- **`transcribe`** — Transcribe voice messages using Groq
+
+## Runtime Directory (`~/.miniclaw/`)
+
+All runtime state lives here:
+
+```
+~/.miniclaw/
+├── .env                 # Configuration (tokens, chat IDs)
+├── data/
+│   ├── sessions.json    # Claude CLI session IDs
+│   ├── tasks/           # Scheduled task JSON files
+│   └── user.md          # User profile (optional)
+└── workspace/           # Scratch space for file operations
+    └── files/           # Downloaded Telegram attachments
+```
+
+## Application Flow
+
+1. **Startup** (`main.go`)
+   - Load config from `~/.miniclaw/.env`
+   - Create session store
+   - Initialize agent runner, Telegram bot, scheduler
+   - Start Telegram polling and scheduler goroutines
+
+2. **Message arrives** (`telegram.go`)
+   - Download file attachments if present
+   - Extract reply context if replying to another message
+   - Pass `Message` to `App.onMessage()`
+
+3. **Message routing** (`app.go`)
+   - Check if chat ID is in `ALLOWED_CHAT_IDS`
+   - Convert to `AgentInput`
+   - Spawn goroutine calling `runQueued()`
+
+4. **Agent execution** (`runner.go`)
+   - Acquire per-chat mutex (block until previous agent finishes)
+   - Build prompt with reply context and file paths
+   - Spawn `claude` subprocess with `--resume <session_id>`
+   - Stream JSON events, parse tool use for status updates
+   - Extract result and session ID
+   - Save session ID for next conversation turn
+
+5. **Response** (`app.go`)
+   - Send result back to Telegram
+   - Edit final status message to show completion
+
+6. **Scheduled tasks** (`scheduler.go`)
+   - Every 10 seconds, check `~/.miniclaw/data/tasks/*.json`
+   - For each active task past its `next_run`:
+     - Execute via `runFunc` (which acquires per-chat mutex)
+     - Send result to chat
+     - Reschedule or delete task
+
+## Key Files Reference
+
+| File | Lines | Purpose |
+|------|-------|----------|
+| `cmd/miniclaw/main.go` | 23 | Entry point |
+| `internal/app.go` | 255 | Application coordinator |
+| `internal/config.go` | 100 | Configuration loading |
+| `internal/runner.go` | 245 | Claude CLI wrapper |
+| `internal/scheduler.go` | 194 | Task scheduling |
+| `internal/telegram.go` | ~200 | Telegram integration |
+| `internal/session.go` | ~50 | Session persistence |
+| `internal/status.go` | ~50 | Status tracking |
+| `agent/CLAUDE.md` | 111 | Agent system prompt |
+| `agent/preferences.md` | 20 | Agent personality |
+
+## Dependencies
+
+miniclaw has exactly three Go dependencies:
+
+```go
+require (
+    github.com/PaulSonOfLars/gotgbot/v2 v2.0.0-rc.33  // Telegram bot API
+    github.com/joho/godotenv v1.5.1                   // .env file loading
+    github.com/robfig/cron/v3 v3.0.1                  // Cron expression parsing
+)
+```
+
+No framework, no ORM, no dependency injection. Just the standard library plus three focused packages.

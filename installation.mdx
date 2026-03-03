@@ -1,0 +1,347 @@
+---
+title: Installation
+description: Install miniclaw and set up your Telegram bot with Claude CLI
+---
+
+## Prerequisites
+
+Before installing miniclaw, ensure you have the following:
+
+<AccordionGroup>
+  <Accordion title="Go 1.23 or later" icon="golang">
+    miniclaw is written in Go and requires Go 1.23+ for the `strings.SplitSeq` iterator.
+    
+    **Check your version:**
+    ```bash
+    go version
+    ```
+    
+    **Install Go:**
+    - macOS: `brew install go`
+    - Linux: Download from [go.dev/dl](https://go.dev/dl/)
+    - Or follow the [official installation guide](https://go.dev/doc/install)
+    
+    <Tip>Make sure `$GOPATH/bin` is in your `PATH` so you can run installed Go binaries.</Tip>
+  </Accordion>
+
+  <Accordion title="Claude CLI" icon="terminal">
+    miniclaw wraps the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) to run the agent.
+    
+    **Install Claude CLI:**
+    ```bash
+    npm install -g @anthropic-ai/claude-code
+    ```
+    
+    **Authenticate:**
+    ```bash
+    claude auth
+    ```
+    
+    Follow the prompts to sign in with your Anthropic account.
+    
+    <Info>The `/setup` skill assumes you're already authenticated since you're using Claude to run setup. It won't run any Claude commands during setup.</Info>
+  </Accordion>
+
+  <Accordion title="Telegram bot token" icon="telegram">
+    You'll need a bot token from Telegram's [@BotFather](https://t.me/BotFather).
+    
+    **Create a bot:**
+    1. Open Telegram and search for [@BotFather](https://t.me/BotFather)
+    2. Send `/newbot` and follow the prompts
+    3. Choose a name (e.g., "My Assistant")
+    4. Choose a username (must end in "bot", e.g., "my_assistant_bot")
+    5. BotFather will give you a token like `714276123:AAHcZ1234abcd-XYz567890`
+    
+    <Warning>Keep your token secret! Anyone with the token can control your bot.</Warning>
+  </Accordion>
+
+  <Accordion title="Groq API key (optional)" icon="microphone">
+    Required only if you want to send voice messages to the bot.
+    
+    miniclaw uses [Groq's Whisper API](https://console.groq.com/) to transcribe audio. The free tier is generous:
+    - 2,000 requests per day
+    - 8 hours of audio per day
+    
+    **Get an API key:**
+    1. Sign up at [console.groq.com](https://console.groq.com/)
+    2. Navigate to API Keys
+    3. Create a new key
+    
+    You can skip this and add it later if needed.
+  </Accordion>
+</AccordionGroup>
+
+## Installation steps
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/AaronCQL/miniclaw.git
+    cd miniclaw
+    ```
+    
+    <Tip>Fork the repo first if you plan to customize and push your changes.</Tip>
+  </Step>
+
+  <Step title="Install dependencies">
+    Fetch the three Go dependencies:
+    
+    ```bash
+    go mod tidy
+    ```
+    
+    This will download:
+    - `github.com/go-telegram-bot-api/telegram-bot-api/v5` — Telegram bot API
+    - `github.com/robfig/cron/v3` — Cron parser
+    - `github.com/joho/godotenv` — `.env` file loader
+  </Step>
+
+  <Step title="Install the binary">
+    Compile and install `miniclaw` to `$GOPATH/bin`:
+    
+    ```bash
+    go install ./cmd/miniclaw/
+    ```
+    
+    Verify it's installed:
+    ```bash
+    which miniclaw
+    ```
+    
+    You should see something like `/Users/you/go/bin/miniclaw`.
+  </Step>
+
+  <Step title="Create runtime directories">
+    miniclaw stores all state in `~/.miniclaw/`:
+    
+    ```bash
+    mkdir -p ~/.miniclaw/{data/tasks,workspace}
+    ```
+    
+    <Info>
+    **Directory structure:**
+    - `~/.miniclaw/.env` — Configuration file
+    - `~/.miniclaw/data/` — Session history and scheduled tasks
+    - `~/.miniclaw/workspace/` — Scratch space for file operations
+    </Info>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create `~/.miniclaw/.env` with your configuration:
+    
+    ```bash .env
+    TELEGRAM_BOT_TOKEN=714276123:AAHcZ1234abcd-XYz567890
+    ALLOWED_CHAT_IDS=123456789
+    MINICLAW_AGENT_DIR=/absolute/path/to/miniclaw/agent
+    GROQ_API_KEY=gsk_abc123xyz  # optional
+    SHOW_STATUS_UPDATES=false   # set to true for real-time tool status
+    ```
+    
+    <ParamField path="TELEGRAM_BOT_TOKEN" type="string" required>
+      Your bot token from [@BotFather](https://t.me/BotFather)
+    </ParamField>
+    
+    <ParamField path="ALLOWED_CHAT_IDS" type="string">
+      Comma-separated list of chat IDs that can use the bot (e.g., `123456789,-1001234567890`).
+      
+      Leave empty to allow anyone. Get your chat ID by sending `/chatid` to the bot.
+    </ParamField>
+    
+    <ParamField path="MINICLAW_AGENT_DIR" type="string" required>
+      Absolute path to the `agent/` directory in the cloned repo.
+      
+      This is where Claude runs from — it contains `CLAUDE.md` and `preferences.md`.
+    </ParamField>
+    
+    <ParamField path="GROQ_API_KEY" type="string">
+      Groq API key for voice message transcription (optional).
+    </ParamField>
+    
+    <ParamField path="SHOW_STATUS_UPDATES" type="boolean" default="false">
+      Show real-time status messages with tool usage (e.g., "⚙️ bash (3) • read (2)").
+    </ParamField>
+    
+    <Warning>
+    **Security:** Set file permissions to `0600` so only you can read the token:
+    ```bash
+    chmod 0600 ~/.miniclaw/.env
+    ```
+    </Warning>
+  </Step>
+
+  <Step title="Verify installation">
+    Run miniclaw to check if everything works:
+    
+    ```bash
+    miniclaw
+    ```
+    
+    You should see:
+    ```
+    telegram bot started
+    scheduler started
+    ```
+    
+    Press `Ctrl+C` to stop.
+  </Step>
+</Steps>
+
+## Alternative: use the setup wizard
+
+Instead of manual installation, you can use the built-in `/setup` skill:
+
+<Steps>
+  <Step title="Clone and enter the repo">
+    ```bash
+    git clone https://github.com/AaronCQL/miniclaw.git
+    cd miniclaw
+    ```
+  </Step>
+
+  <Step title="Run the setup wizard">
+    ```bash
+    claude
+    ```
+    
+    Then type:
+    ```
+    /setup
+    ```
+    
+    The wizard will:
+    - Check prerequisites (Go, Claude CLI)
+    - Install dependencies with `go mod tidy`
+    - Install the binary with `go install`
+    - Create runtime directories
+    - Walk you through configuration
+    - Optionally set up a background service (systemd/launchd)
+    - Register bot commands with Telegram
+  </Step>
+</Steps>
+
+<Info>
+The setup wizard is **idempotent** — safe to run multiple times. It checks existing configuration and only prompts for missing values.
+</Info>
+
+## Running as a background service
+
+You'll likely want miniclaw to run in the background and start automatically on boot.
+
+<Tabs>
+  <Tab title="Linux (systemd)">
+    Create `~/.config/systemd/user/miniclaw.service`:
+    
+    ```ini
+    [Unit]
+    Description=miniclaw Telegram Bot
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=simple
+    EnvironmentFile=%h/.miniclaw/.env
+    Environment=PATH=/path/to/claude/dir:/usr/local/bin:/usr/bin:/bin
+    ExecStart=/home/you/go/bin/miniclaw
+    Restart=on-failure
+    RestartSec=5
+
+    [Install]
+    WantedBy=default.target
+    ```
+    
+    Enable and start the service:
+    ```bash
+    systemctl --user daemon-reload
+    systemctl --user enable miniclaw
+    systemctl --user start miniclaw
+    ```
+    
+    Enable lingering so it runs when you're not logged in:
+    ```bash
+    loginctl enable-linger
+    ```
+    
+    **Check status:**
+    ```bash
+    systemctl --user status miniclaw
+    ```
+    
+    **View logs:**
+    ```bash
+    journalctl --user -u miniclaw -f
+    ```
+  </Tab>
+
+  <Tab title="macOS (launchd)">
+    Create `~/Library/LaunchAgents/com.miniclaw.agent.plist`:
+    
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.miniclaw.agent</string>
+        <key>ProgramArguments</key>
+        <array>
+            <string>/Users/you/go/bin/miniclaw</string>
+        </array>
+        <key>EnvironmentVariables</key>
+        <dict>
+            <key>PATH</key>
+            <string>/path/to/go:/path/to/claude:/usr/local/bin:/usr/bin:/bin</string>
+            <key>TELEGRAM_BOT_TOKEN</key>
+            <string>your-token</string>
+            <key>ALLOWED_CHAT_IDS</key>
+            <string>123456789</string>
+            <key>MINICLAW_AGENT_DIR</key>
+            <string>/absolute/path/to/agent</string>
+        </dict>
+        <key>RunAtLoad</key>
+        <true/>
+        <key>KeepAlive</key>
+        <true/>
+        <key>StandardOutPath</key>
+        <string>/tmp/miniclaw.log</string>
+        <key>StandardErrorPath</key>
+        <string>/tmp/miniclaw.log</string>
+    </dict>
+    </plist>
+    ```
+    
+    Load the service:
+    ```bash
+    launchctl load ~/Library/LaunchAgents/com.miniclaw.agent.plist
+    ```
+    
+    **Check status:**
+    ```bash
+    launchctl list | grep com.miniclaw.agent
+    ```
+    
+    **View logs:**
+    ```bash
+    tail -f /tmp/miniclaw.log
+    ```
+    
+    **Restart:**
+    ```bash
+    launchctl kickstart -k gui/$(id -u)/com.miniclaw.agent
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+The `/setup` wizard can configure the background service for you — just answer "yes" when prompted.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get from zero to a working bot interaction
+  </Card>
+  <Card title="Customize your bot" icon="palette" href="/configuration/agent-customization">
+    Edit `agent/preferences.md` to set name, personality, and timezone
+  </Card>
+</CardGroup>

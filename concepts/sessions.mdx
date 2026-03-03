@@ -1,0 +1,267 @@
+---
+title: Sessions
+description: Persistent conversation context per chat
+---
+
+## Overview
+
+miniclaw maintains **persistent sessions** for each Telegram chat using Claude CLI's built-in session management. This means:
+
+- Conversations have full context across messages
+- The agent remembers previous interactions within the same chat
+- Each chat gets its own independent session
+- Sessions survive restarts (stored on disk by Claude CLI)
+
+## How Sessions Work
+
+### Session Creation
+
+When a chat sends its first message:
+
+1. AgentRunner checks `SessionStore` for an existing session ID
+2. If none exists, it starts Claude CLI without `--resume`
+3. Claude CLI creates a new session and returns a `session_id` in the stream
+4. The session ID is stored in `data/sessions.json` mapped to the chat ID
+
+```go
+sessionID := r.sessions.Get(input.ChatID)
+if sessionID != "" {
+    log.Printf("[agent] chat=%d resuming session=%s", input.ChatID, sessionID)
+    args = append(args, "--resume", sessionID)
+} else {
+    log.Printf("[agent] chat=%d starting new session", input.ChatID)
+}
+```
+
+### Session Resumption
+
+On subsequent messages:
+
+1. AgentRunner finds the session ID in `SessionStore`
+2. Passes `--resume <session_id>` to Claude CLI
+3. Claude CLI loads the full conversation history
+4. The agent has access to all previous context
+
+### Session Storage
+
+Session IDs are persisted in `data/sessions.json`:
+
+```json
+{
+  "123456789": "session_abc123def456",
+  "987654321": "session_xyz789ghi012"
+}
+```
+
+The `SessionStore` implementation (`internal/session.go`) is thread-safe and uses atomic writes:
+
+```go
+type SessionStore struct {
+    path     string
+    sessions map[string]string // chatID (as string) → session ID
+    mu       sync.RWMutex
+}
+
+func (s *SessionStore) Get(chatID int64) string {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    return s.sessions[fmt.Sprintf("%d", chatID)]
+}
+
+func (s *SessionStore) Set(chatID int64, sessionID string) {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    s.sessions[fmt.Sprintf("%d", chatID)] = sessionID
+    s.save()
+}
+```
+
+<Note>
+Session data (conversation history, files, etc.) is stored by Claude CLI in its own session directory, not by miniclaw. miniclaw only tracks the mapping between chat IDs and session IDs.
+</Note>
+
+## Reply Context
+
+When you reply to a message in Telegram, miniclaw includes the original message as context:
+
+```go
+if input.ReplyToContent != "" {
+    parts = append(parts, fmt.Sprintf("[Replying to %s: %s]", input.ReplyToSender, input.ReplyToContent))
+}
+
+if input.ReplyToFilePath != "" {
+    parts = append(parts, fmt.Sprintf("[Replied-to message has file attached: %s — use the Read tool to view this file]", input.ReplyToFilePath))
+}
+```
+
+This allows the agent to understand what you're referring to without relying solely on session history.
+
+**Example:**
+
+User (original message): "What's the capital of France?"
+
+Agent: "The capital of France is Paris."
+
+User (replying to agent's message): "What's its population?"
+
+Agent sees:
+```
+[Replying to Enki: The capital of France is Paris.]
+What's its population?
+```
+
+The agent understands you're asking about Paris because the reply context is included.
+
+## Attached Files
+
+Files sent via Telegram are downloaded and made available to the agent:
+
+```go
+if input.FilePath != "" {
+    parts = append(parts, fmt.Sprintf("[File attached: %s — use the Read tool to view this file]", input.FilePath))
+}
+```
+
+Files are stored at:
+```
+~/.miniclaw/workspace/files/<chat_id>/<filename>
+```
+
+**Supported file types:**
+- Documents
+- Photos (downloaded at highest resolution)
+- Videos
+- Audio files (including voice messages)
+
+<Tip>
+When you send a voice message, the agent automatically transcribes it using the `/transcribe` skill (if `GROQ_API_KEY` is configured) and responds to the transcribed text.
+</Tip>
+
+## Session Isolation
+
+Each chat has a completely independent session:
+
+- Chat A cannot see conversations from Chat B
+- Sessions never cross-contaminate
+- Individual chats can be reset without affecting others
+
+This is enforced by:
+1. Unique session IDs per chat in `SessionStore`
+2. Per-chat file directories
+3. Chat ID passed to agent via `MINICLAW_CHAT_ID` environment variable
+
+## Resetting Sessions
+
+To start a fresh conversation:
+
+### Option 1: Use `/compact` Command
+
+The `/compact` command (if available via skills) compacts the conversation context while preserving key information.
+
+### Option 2: Manual Reset
+
+1. Stop miniclaw
+2. Find your session ID in `data/sessions.json`
+3. Delete the corresponding session directory in Claude CLI's session storage
+4. Remove the entry from `data/sessions.json`
+5. Restart miniclaw
+
+On the next message, a new session will be created.
+
+<Warning>
+Deleting a session removes all conversation history, uploaded files, and preferences stored in that session. This action cannot be undone.
+</Warning>
+
+## Session Lifecycle
+
+```
+┌─────────────────────────────────────────────┐
+│  User sends first message                  │
+└────────────────┬────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────────────┐
+│  AgentRunner checks SessionStore            │
+│  → No session ID found                      │
+└────────────────┬────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────────────┐
+│  Claude CLI starts new session              │
+│  → Returns session_id in stream             │
+└────────────────┬────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────────────┐
+│  SessionStore saves chat_id → session_id    │
+└────────────────┬────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────────────┐
+│  User sends subsequent messages             │
+└────────────────┬────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────────────┐
+│  AgentRunner finds session ID               │
+│  → Passes --resume <session_id>             │
+└────────────────┬────────────────────────────┘
+                 ↓
+┌─────────────────────────────────────────────┐
+│  Claude CLI loads conversation history      │
+│  → Full context available                   │
+└─────────────────────────────────────────────┘
+```
+
+## Implementation Details
+
+### Streaming Events
+
+The AgentRunner parses streaming JSON events from Claude CLI to extract the session ID:
+
+```go
+var event streamEvent
+if err := json.Unmarshal(line, &event); err != nil {
+    log.Printf("[agent] failed to parse stream line: %v", err)
+    continue
+}
+
+switch event.Type {
+case "system":
+    if event.Subtype == "init" && event.SessionID != "" {
+        resultSessionID = event.SessionID
+    }
+case "result":
+    if event.SessionID != "" {
+        resultSessionID = event.SessionID
+    }
+}
+```
+
+After the subprocess completes, the session ID is persisted:
+
+```go
+if resultSessionID != "" {
+    r.sessions.Set(input.ChatID, resultSessionID)
+}
+```
+
+### Thread Safety
+
+The `SessionStore` uses `sync.RWMutex` to allow concurrent reads:
+
+- Multiple chats can read their session IDs simultaneously
+- Writes (setting session IDs) are serialized
+- File writes use atomic rename to prevent corruption
+
+### Atomic File Writes
+
+To prevent data loss from crashes:
+
+```go
+// Write to temporary file
+tmp, err := os.CreateTemp(dir, "sessions-*.json")
+// ...
+tmp.Write(data)
+tmp.Close()
+
+// Atomic rename
+os.Rename(tmp.Name(), s.path)
+```
+
+This ensures `sessions.json` is never left in a partially written state.

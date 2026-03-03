@@ -1,0 +1,223 @@
+---
+title: File Operations
+description: Send files, work with the workspace, and understand sandbox restrictions
+---
+
+## Sending Files to the Bot
+
+You can send files directly to the bot through Telegram. The bot supports:
+
+- **Photos** (JPG, PNG, etc.)
+- **Documents** (any file type)
+- **Videos**
+- **Audio files**
+- **Voice messages** (see [Voice Messages](/usage/voice-messages))
+
+<Steps>
+  <Step title="Attach file in Telegram">
+    Use the attachment button or drag-and-drop to select a file
+  </Step>
+  
+  <Step title="Add optional caption">
+    You can include a text message with the file to tell the bot what to do with it
+  </Step>
+  
+  <Step title="Send to bot">
+    The bot downloads the file and can analyze, edit, or process it
+  </Step>
+</Steps>
+
+### How Files Are Handled
+
+When you send a file:
+
+1. The bot downloads it to `~/.miniclaw/files/<chat_id>/`
+2. Your message to the agent includes: `[File attached: <path>]`
+3. The agent uses the Read tool to view the file contents
+4. If you send a file with no text, the bot automatically describes or analyzes it
+
+<CodeGroup>
+```text With Caption
+[File attached: ~/.miniclaw/files/123456789/config_abc123.yaml]
+
+What's wrong with this configuration?
+```
+
+```text Without Caption
+[File attached: ~/.miniclaw/files/123456789/screenshot_def456.jpg]
+
+The user sent a file. Please view and describe or analyse it.
+```
+</CodeGroup>
+
+### Files in Replies
+
+You can also reply to messages that contain files. The bot will download both:
+- The file from the message you're replying to
+- Any file you attach to your reply
+
+This is useful for comparing files or providing additional context.
+
+## The Workspace Directory
+
+The agent's primary working directory for file operations is:
+
+```
+~/.miniclaw/workspace/
+```
+
+This is where the agent should:
+- Download files (e.g., `curl`, `wget`)
+- Clone git repositories
+- Create temporary files
+- Extract archives
+- Run build processes
+
+<Tabs>
+  <Tab title="Download Example">
+    ```text
+You: Download the latest release of miniclaw from GitHub
+
+Bot: I'll download the release to ~/.miniclaw/workspace/
+    ```
+  </Tab>
+  
+  <Tab title="Git Clone Example">
+    ```text
+You: Clone the example repository
+
+Bot: I'll clone it to ~/.miniclaw/workspace/example/
+    ```
+  </Tab>
+  
+  <Tab title="File Creation Example">
+    ```text
+You: Create a Python script to analyze the data
+
+Bot: I'll create the script at ~/.miniclaw/workspace/analyze.py
+    ```
+  </Tab>
+</Tabs>
+
+## Sandbox Restrictions
+
+For security, the agent operates in a restricted sandbox and can **ONLY** access three locations:
+
+<Steps>
+  <Step title="Current Directory (.)">
+    Contains `preferences.md` for agent behavior settings
+  </Step>
+  
+  <Step title="~/.miniclaw/ Directory">
+    Runtime data, workspace, files, and task storage
+    
+    **Structure:**
+    - `~/.miniclaw/data/` — sessions and tasks
+    - `~/.miniclaw/workspace/` — scratch space for file operations
+    - `~/.miniclaw/files/` — uploaded files from Telegram
+  </Step>
+  
+  <Step title="Parent Directory (..)">
+    The parent repository (where the bot code lives)
+  </Step>
+</Steps>
+
+<Warning>
+The agent **CANNOT** read, write, or access any files outside these three locations unless you explicitly grant permission.
+</Warning>
+
+### What This Means
+
+The sandbox restrictions protect your system while allowing the agent to:
+
+✅ **Allowed:**
+- Read and edit files you send via Telegram
+- Download files to `~/.miniclaw/workspace/`
+- Clone repositories into the workspace
+- Create and modify files in allowed locations
+- Run commands that operate within the sandbox
+
+❌ **Not Allowed:**
+- Access your home directory (except `~/.miniclaw/`)
+- Read system files (e.g., `/etc/`)
+- Modify files in `/usr/`, `/var/`, etc.
+- Access other users' files
+
+### Granting Access
+
+If you need the agent to access files outside the sandbox, you must explicitly grant permission:
+
+```text
+You: You have permission to read and edit files in ~/Documents/project/
+```
+
+Be specific about:
+- Which directories the agent can access
+- Whether it can read, write, or both
+- Any restrictions or conditions
+
+## Common File Operations
+
+### Viewing Files
+
+```text
+You: Show me the contents of config.yaml
+```
+
+The agent uses the Read tool to display file contents.
+
+### Editing Files
+
+```text
+You: Change the port in config.yaml to 8080
+```
+
+The agent uses the Edit tool to make precise changes to existing files.
+
+### Creating Files
+
+```text
+You: Create a README.md in the workspace
+```
+
+The agent uses the Write tool to create new files.
+
+### Downloading Files
+
+```text
+You: Download the dataset from https://example.com/data.csv
+```
+
+The agent uses `curl` or `wget` to download files to `~/.miniclaw/workspace/`.
+
+### Cloning Repositories
+
+```text
+You: Clone https://github.com/user/repo and analyze the code structure
+```
+
+The agent clones repositories into the workspace and can explore, analyze, or modify them.
+
+### File Analysis
+
+<CodeGroup>
+```text Images
+Send an image → Bot describes what's in it
+```
+
+```text Code
+Send a Python file → Bot explains what it does and suggests improvements
+```
+
+```text Data
+Send a CSV → Bot analyzes the structure and summarizes the data
+```
+
+```text Documents
+Send a PDF → Bot extracts and summarizes the content
+```
+</CodeGroup>
+
+<Note>
+Large files (images, videos) are downloaded but may take time to process depending on the file size and your network connection.
+</Note>

@@ -1,0 +1,238 @@
+---
+title: Architecture
+description: System design and component overview
+---
+
+## Overview
+
+miniclaw is a **Go wrapper around Claude CLI** that exposes Claude as a Telegram bot. It provides persistent sessions, scheduled tasks, and a skill system for customizing agent behavior.
+
+## High-Level Flow
+
+The request flow is straightforward:
+
+```
+Telegram User
+    ↓ (sends message)
+Telegram Bot API
+    ↓ (webhook/polling)
+TelegramBot (internal/telegram.go)
+    ↓ (parses message)
+App (internal/app.go)
+    ↓ (queues per-chat)
+AgentRunner (internal/runner.go)
+    ↓ (spawns subprocess)
+Claude CLI
+    ↓ (streams JSON events)
+AgentRunner
+    ↓ (sends response)
+Telegram Bot API
+    ↓
+User receives response
+```
+
+## Core Components
+
+### App
+
+The main application orchestrator (`internal/app.go`):
+
+- Coordinates all components (TelegramBot, AgentRunner, Scheduler)
+- Manages per-chat state with mutexes to serialize agent runs
+- Handles cancellation and restart requests
+- Enforces chat allowlist for security
+
+```go
+type App struct {
+    config      Config
+    bot         *TelegramBot
+    agentRunner *AgentRunner
+    scheduler   *Scheduler
+    chats       sync.Map // map[int64]*chatState
+}
+```
+
+Each chat gets its own `chatState` with a mutex and cancel function. This ensures only one agent can run per chat at a time.
+
+### TelegramBot
+
+Handles all Telegram API interactions (`internal/telegram.go`):
+
+- Polls for updates using the gotgbot library
+- Downloads attached files to `workspace/files/<chat_id>/`
+- Parses messages and reply context
+- Sends responses with HTML formatting
+- Splits long messages into chunks (4096 char limit)
+
+**Built-in commands:**
+- `/chatid` - Get your chat ID
+- `/cancel` - Cancel the current request
+- `/restart` - Restart miniclaw
+
+### AgentRunner
+
+Executes Claude CLI and manages sessions (`internal/runner.go`):
+
+- Spawns `claude` subprocess with `--output-format stream-json`
+- Resumes sessions using `--resume <session_id>` if available
+- Parses streaming JSON events from stdout
+- Extracts tool use events for status updates
+- Stores session IDs in SessionStore for persistence
+
+**Key behavior:**
+- Working directory is set to `config.AgentDir` (the `agent/` directory)
+- Environment variable `MINICLAW_CHAT_ID` is passed to Claude CLI
+- Uses `--dangerously-skip-permissions` to avoid interactive prompts
+
+```go
+args := []string{
+    "--print",
+    "--verbose",
+    "--output-format", "stream-json",
+    "--dangerously-skip-permissions",
+}
+
+sessionID := r.sessions.Get(input.ChatID)
+if sessionID != "" {
+    args = append(args, "--resume", sessionID)
+}
+
+cmd := exec.CommandContext(ctx, "claude", args...)
+cmd.Dir = r.config.AgentDir
+cmd.Env = append(os.Environ(), fmt.Sprintf("MINICLAW_CHAT_ID=%d", input.ChatID))
+```
+
+### Scheduler
+
+Executes scheduled tasks (`internal/scheduler.go`):
+
+- Polls `data/tasks/*.json` every `scheduler_interval` (default: 30s)
+- Executes tasks where `next_run` has passed
+- Reschedules recurring tasks (cron, interval)
+- Deletes one-time tasks and expired tasks
+- Runs tasks through the same per-chat queue as messages
+
+See [Scheduler](/concepts/scheduler) for detailed usage.
+
+### SessionStore
+
+Persists Claude CLI session IDs to disk (`internal/session.go`):
+
+- Stores mapping of `chat_id → session_id` as JSON
+- Thread-safe with `sync.RWMutex`
+- Saved at `data/sessions.json`
+- Atomic writes using temp file + rename
+
+See [Sessions](/concepts/sessions) for more details.
+
+## Agent Working Directory
+
+The Claude CLI subprocess runs in the `agent/` directory with access to:
+
+### CLAUDE.md
+
+The main agent prompt that defines:
+- Sandbox restrictions (only access `.`, `~/.miniclaw/`, and `../`)
+- Persistent data locations
+- Behavior rules (read preferences.md at startup, etc.)
+- Scheduled task creation format
+- Message formatting rules (Telegram HTML, not Markdown)
+- Long-running process handling with tmux
+
+Key constraints:
+```markdown
+You may ONLY access these three locations:
+1. Your current working directory (.) — for preferences.md
+2. ~/.miniclaw/ — for runtime data and workspace operations
+3. ../ — the parent repo directory
+```
+
+### preferences.md
+
+User-editable settings read at the start of every conversation:
+- Agent name and personality
+- Timezone (for task scheduling)
+- Confirmation settings for file operations
+- Bullet point style
+- Custom user preferences
+
+```markdown
+## Identity
+- Name: Enki
+- Personality: Helpful, concise, friendly
+
+## Settings
+- Timezone: UTC+8
+- Confirm before file changes: yes
+```
+
+Users can ask the agent to update these settings, and changes persist across sessions.
+
+## Data Directory Structure
+
+```
+~/.miniclaw/
+├── data/
+│   ├── sessions.json          # Session ID mappings
+│   ├── tasks/                 # Scheduled tasks
+│   │   └── *.json
+│   └── user.md               # User profile (optional)
+├── workspace/                 # Scratch space for file operations
+│   └── files/                # Downloaded Telegram files
+│       └── <chat_id>/
+└── plans/                    # Plan files (user preference)
+```
+
+<Note>
+The agent cannot access files outside `agent/`, `~/.miniclaw/`, and the parent repo directory. This sandbox prevents accidental access to system files.
+</Note>
+
+## Configuration
+
+miniclaw reads configuration from environment variables:
+
+```bash
+TELEGRAM_BOT_TOKEN=your_token_here
+ALLOWED_CHAT_IDS=123456789,987654321  # Comma-separated
+MINICLAW_AGENT_DIR=/path/to/agent
+MINICLAW_WORKSPACE_DIR=/path/to/workspace
+MINICLAW_DATA_DIR=/path/to/data
+SCHEDULER_INTERVAL=30s
+SHOW_STATUS_UPDATES=true
+```
+
+See the [Configuration](/configuration/environment) page for complete details.
+
+## Concurrency Model
+
+**Per-chat serialization:**
+- Each chat gets a mutex that serializes agent execution
+- Multiple chats can run agents in parallel
+- New messages queue behind the currently running agent for that chat
+
+**Cancellation:**
+- Each running agent has a cancel function stored in `chatState`
+- `/cancel` command triggers context cancellation
+- Cancelled agents exit gracefully with "Cancelled" message
+
+**Typing indicator:**
+- Sent every 4 seconds while agent is running
+- Automatically stops when agent completes or is cancelled
+
+## Status Updates
+
+When `SHOW_STATUS_UPDATES=true`, miniclaw sends real-time status messages showing tool usage:
+
+```
+🔧 Read: config.json
+🔧 Bash: go build
+🔧 Write: output.txt
+✅ Done
+```
+
+Status messages are:
+- Created on first tool use
+- Updated with 1-second debouncing to avoid rate limits
+- Marked "Done" or "Cancelled" when agent completes
+
+The status tracker (`internal/app.go`) extracts labels from tool inputs for better readability.

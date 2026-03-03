@@ -1,0 +1,150 @@
+---
+title: Messaging
+description: Send messages, get responses, and track agent activity
+---
+
+## Basic Messaging
+
+Simply send a text message to the bot, and it will process your request and respond. The agent maintains conversation context throughout your session.
+
+```
+You: What's the weather like today?
+Bot: I'll check the weather for you...
+```
+
+## Reply Context
+
+You can reply to any message in the conversation to provide additional context. The bot understands what you're referring to:
+
+<Steps>
+  <Step title="Send initial message">
+    Ask a question or make a request
+  </Step>
+  
+  <Step title="Reply to bot's response">
+    Use Telegram's reply feature to respond to a specific message
+  </Step>
+  
+  <Step title="Bot uses context">
+    The bot sees both the original message content and your reply
+  </Step>
+</Steps>
+
+When you reply to a message, the bot receives:
+- The sender's name of the message you're replying to
+- The full text content of that message
+- Any files attached to that message
+
+This is useful for:
+- Continuing multi-turn conversations
+- Providing clarification on previous responses
+- Referencing specific outputs or code snippets
+
+## Typing Indicator
+
+When the bot receives your message, it sends a typing indicator to show it's processing your request. This appears as "typing..." in Telegram.
+
+## Status Updates
+
+For longer operations, the bot sends live status messages showing what it's doing. These messages update in real-time as the agent uses different tools:
+
+```html
+<b>Running tools:</b>
+• Bash <code>git status</code>
+• Read <code>config.json</code>
+• Edit <code>main.go</code>
+```
+
+The status message shows:
+- Tool name (e.g., Bash, Read, Edit, Write)
+- Key parameters or labels (e.g., file names, commands)
+- Currently in-progress tasks are shown in bold
+
+<Tabs>
+  <Tab title="File Operations">
+    ```html
+    • Read <code>server.go</code>
+    • Edit <code>config.yaml</code>
+    ```
+  </Tab>
+  
+  <Tab title="Shell Commands">
+    ```html
+    • Bash <code>npm install</code>
+    • Bash <code>go test ./...</code>
+    ```
+  </Tab>
+  
+  <Tab title="Searches">
+    ```html
+    • Grep <code>TODO</code>
+    • WebSearch climate data APIs
+    ```
+  </Tab>
+  
+  <Tab title="Task Planning">
+    ```html
+    • TodoWrite <b>Fix type errors in handlers</b>
+    ```
+  </Tab>
+</Tabs>
+
+## Cancelling Requests
+
+If the bot is taking too long or you want to stop the current operation, use the `/cancel` command:
+
+```
+/cancel
+```
+
+This will:
+- Stop the currently running agent session
+- Cancel any in-progress tool executions
+- Allow you to start a new request immediately
+
+<Note>
+Cancelling a request will terminate the agent's current operation, but won't undo any changes already made (like files that were edited or commands that were run).
+</Note>
+
+## Session Management
+
+The bot maintains conversation sessions for each chat. Your conversation history is preserved across messages, allowing the agent to:
+
+- Remember previous context
+- Reference earlier parts of the conversation
+- Build upon previous work
+
+To start fresh and clear the conversation history, use:
+
+```
+/restart
+```
+
+This creates a new session while keeping any files or changes the agent made.
+
+## Getting Your Chat ID
+
+Some operations (like scheduled tasks) require your chat ID. To find it:
+
+```
+/chatid
+```
+
+The bot will respond with your chat ID in a copyable format:
+
+```
+Chat ID: -1001234567890
+```
+
+## Message Formatting
+
+The bot responds using Telegram's HTML formatting. Responses may include:
+
+- **Bold text** for emphasis
+- `Inline code` for commands and file names
+- Code blocks for longer code snippets
+- Links to relevant documentation or resources
+
+<Warning>
+Very long responses (over 4096 characters) are automatically split into multiple messages at natural break points (newlines).
+</Warning>

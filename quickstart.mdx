@@ -1,80 +1,429 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get from zero to a working miniclaw bot in under 5 minutes
 ---
 
-## Get started in three steps
+## Get up and running
 
-Get your documentation site running locally and make your first customization.
+This guide walks you through setting up miniclaw and having your first conversation with the bot on Telegram.
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Prerequisites check">
+    Make sure you have:
+    - Go 1.23+ installed (`go version`)
+    - Claude CLI installed and authenticated (`claude --version`)
+    - A Telegram bot token from [@BotFather](https://t.me/BotFather)
+    
+    <Info>See the [installation guide](/installation) for detailed setup instructions.</Info>
+  </Step>
+
+  <Step title="Clone and setup">
+    ```bash
+    git clone https://github.com/AaronCQL/miniclaw.git
+    cd miniclaw
+    claude
+    ```
+    
+    Once Claude CLI starts, type:
+    ```
+    /setup
+    ```
+    
+    The setup wizard will guide you through:
+    - Installing Go dependencies
+    - Compiling the binary
+    - Configuring your bot token
+    - Setting the agent directory
+    - Optionally configuring a background service
+    
+    <Tip>The setup wizard is idempotent — safe to run multiple times if something goes wrong.</Tip>
+  </Step>
+
+  <Step title="Get your chat ID">
+    Start miniclaw:
+    ```bash
+    miniclaw
+    ```
+    
+    Open Telegram and find your bot (search for the username you gave it in BotFather).
+    
+    Send this command to the bot:
+    ```
+    /chatid
+    ```
+    
+    The bot will reply with your chat ID, something like:
+    ```
+    Your chat ID: 123456789
+    ```
+    
+    <Info>
+    **Group chats** have negative IDs (e.g., `-1001234567890`).
+    
+    **Private chats** have positive IDs.
+    </Info>
+  </Step>
+
+  <Step title="Add your chat ID to the allowlist">
+    Stop miniclaw (`Ctrl+C`) and edit `~/.miniclaw/.env`:
+    
+    ```bash .env
+    TELEGRAM_BOT_TOKEN=714276123:AAHcZ1234abcd-XYz567890
+    ALLOWED_CHAT_IDS=123456789  # Add your chat ID here
+    MINICLAW_AGENT_DIR=/absolute/path/to/miniclaw/agent
+    SHOW_STATUS_UPDATES=false
+    ```
+    
+    <Warning>
+    If you leave `ALLOWED_CHAT_IDS` empty, the bot will respond to **anyone**. Always set this in production.
+    </Warning>
+  </Step>
+
+  <Step title="Restart and test">
+    Start miniclaw again:
+    ```bash
+    miniclaw
+    ```
+    
+    Send a message to your bot on Telegram:
+    ```
+    Hello! What can you do?
+    ```
+    
+    The bot should respond with information about its capabilities.
+  </Step>
+</Steps>
+
+## Example interactions
+
+Here are some things you can try with your new bot:
+
+<CodeGroup>
+
+```text Basic conversation
+You: What's the weather like today?
+
+Bot: I don't have access to real-time weather data,
+but I can help you check weather services or set up
+a scheduled task to fetch weather reports.
+
+Would you like me to create a daily weather report
+task for you?
+```
+
+```text File operations
+You: Create a todo list for me
+
+Bot: I'll create a todo list file for you.
+
+[Bot creates ~/.miniclaw/workspace/todo.md]
+
+Done! I've created a todo list at
+~/.miniclaw/workspace/todo.md
+
+What items would you like me to add?
+```
+
+```text Scheduled tasks
+You: Remind me to exercise every day at 7am
+
+Bot: I'll create a daily reminder task.
+
+[Bot creates ~/.miniclaw/data/tasks/exercise-reminder.json]
+
+Scheduled! I'll send you an exercise reminder every
+day at 7:00 AM (UTC+8).
+
+The task is saved as exercise-reminder.json.
+```
+
+```text Code execution
+You: What's my current disk usage?
+
+Bot: Let me check.
+
+[Bot runs: df -h]
+
+Here's your disk usage:
+
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1       234G  123G  100G  55% /
+
+You're using 55% of your main disk.
+```
+
+</CodeGroup>
+
+## Using slash commands
+
+miniclaw has built-in slash commands (called "skills") that trigger specific behaviors:
 
 <AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
+  <Accordion title="/chatid" icon="id-badge">
+    Get your Telegram chat ID:
+    ```
+    /chatid
+    ```
+    Response:
+    ```
+    Your chat ID: 123456789
+    ```
   </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
+
+  <Accordion title="/cancel" icon="circle-xmark">
+    Cancel the current request if the agent is taking too long:
+    ```
+    /cancel
+    ```
+  </Accordion>
+
+  <Accordion title="/compact" icon="compress">
+    Compact conversation context to free up space:
+    ```
+    /compact
+    ```
+    This truncates old messages from the session history while keeping recent context.
+  </Accordion>
+
+  <Accordion title="/diff" icon="code-compare">
+    Show changes in the working directory:
+    ```
+    /diff
+    ```
+    Useful if you asked the bot to modify code and want to see what changed.
+  </Accordion>
+
+  <Accordion title="/restart" icon="rotate-right">
+    Restart the miniclaw service (requires systemd/launchd):
+    ```
+    /restart
+    ```
+  </Accordion>
+
+  <Accordion title="/commands" icon="list">
+    Register all slash commands with Telegram so they appear in the command menu:
+    ```
+    /commands
+    ```
+    After running this, when you type `/` in Telegram, you'll see a list of available commands.
   </Accordion>
 </AccordionGroup>
 
-### Step 2: Deploy your changes
+<Tip>
+Run `/commands` to register these with Telegram — they'll appear in the command menu when you type `/` in the chat.
+</Tip>
+
+## Sending files and images
+
+You can send files directly to the bot:
+
+<Steps>
+  <Step title="Send a file">
+    In Telegram, tap the attachment icon and select a file.
+    
+    The bot will save it to `~/.miniclaw/workspace/files/` and can reference it in responses.
+  </Step>
+
+  <Step title="Ask the bot to process it">
+    Send a follow-up message:
+    ```
+    Can you analyze this CSV and show me the top 10 entries?
+    ```
+    
+    The bot will read the file and process your request.
+  </Step>
+</Steps>
+
+<Info>
+**Supported file types:**
+- Images (JPG, PNG, GIF, WebP)
+- Documents (PDF, CSV, TXT, MD, etc.)
+- Voice messages (requires `GROQ_API_KEY` for transcription)
+</Info>
+
+## Customizing your bot
+
+miniclaw stores its personality and behavior in `agent/preferences.md`. Let's customize it:
+
+<Steps>
+  <Step title="Edit preferences">
+    Open `agent/preferences.md` in your cloned repo:
+    
+    ```markdown preferences.md
+    # Preferences
+
+    ## Identity
+
+    - Name: Enki
+    - Personality: Helpful, concise, friendly
+
+    ## Settings
+
+    - Timezone: UTC+8
+    - Confirm before file changes: yes, except trivial 1-2 line changes
+    - Always respond to local command outputs with a brief confirmation
+    - Bullet point style: •
+
+    ## User Preferences
+
+    - Use British English spelling
+    ```
+    
+    Change the name and personality to your liking.
+  </Step>
+
+  <Step title="Test the changes">
+    Send a message to your bot:
+    ```
+    What's your name?
+    ```
+    
+    The bot should respond with the name you set in `preferences.md`.
+    
+    <Tip>
+    The bot reads `preferences.md` at the start of every conversation, so changes take effect immediately.
+    </Tip>
+  </Step>
+</Steps>
+
+## Creating scheduled tasks
+
+Scheduled tasks are stored as JSON files in `~/.miniclaw/data/tasks/`. You can create them by asking the bot or writing the files directly.
+
+<Tabs>
+  <Tab title="Ask the bot">
+    ```
+    You: Send me a weather report every morning at 8am
+    
+    Bot: I'll create a daily weather task for you.
+    
+    [Bot creates ~/.miniclaw/data/tasks/weather-report.json]
+    
+    Done! I'll send you a weather report every day at 8:00 AM (UTC+8).
+    ```
+  </Tab>
+
+  <Tab title="Create manually">
+    Create `~/.miniclaw/data/tasks/weather-report.json`:
+    
+    ```json
+    {
+      "prompt": "Fetch weather report for Singapore and summarise",
+      "chat_id": 123456789,
+      "type": "cron",
+      "value": "0 8 * * *",
+      "status": "active",
+      "next_run": "2026-03-04T08:00:00+08:00"
+    }
+    ```
+    
+    <ParamField path="prompt" type="string" required>
+      What the agent should do when the task runs
+    </ParamField>
+    
+    <ParamField path="chat_id" type="integer" required>
+      Which chat to send the result to
+    </ParamField>
+    
+    <ParamField path="type" type="string" required>
+      Task type: `"cron"`, `"interval"`, or `"once"`
+    </ParamField>
+    
+    <ParamField path="value" type="string">
+      - For `"cron"`: cron expression (e.g., `"0 8 * * *"`)
+      - For `"interval"`: duration (e.g., `"24h"`, `"30m"`)
+      - For `"once"`: leave empty
+    </ParamField>
+    
+    <ParamField path="status" type="string" required>
+      `"active"` or `"paused"`
+    </ParamField>
+    
+    <ParamField path="next_run" type="string" required>
+      ISO 8601 timestamp of next execution (e.g., `"2026-03-04T08:00:00+08:00"`)
+    </ParamField>
+    
+    <ParamField path="expires" type="string">
+      Optional: ISO 8601 timestamp after which the task is deleted
+    </ParamField>
+  </Tab>
+</Tabs>
+
+<Info>
+The scheduler polls every 10 seconds and runs tasks when `next_run` is in the past.
+</Info>
+
+## Troubleshooting
 
 <AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+  <Accordion title="Bot doesn't respond" icon="circle-exclamation">
+    **Check if miniclaw is running:**
+    ```bash
+    # If running manually
+    ps aux | grep miniclaw
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    # If using systemd
+    systemctl --user status miniclaw
+    
+    # If using launchd
+    launchctl list | grep com.miniclaw.agent
+    ```
+    
+    **Check logs:**
+    ```bash
+    # systemd
+    journalctl --user -u miniclaw -f
+    
+    # launchd
+    tail -f /tmp/miniclaw.log
+    
+    # manual run
+    miniclaw
+    ```
+  </Accordion>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Accordion title="Bot says 'unauthorised'" icon="lock">
+    Your chat ID is not in `ALLOWED_CHAT_IDS`.
+    
+    1. Send `/chatid` to the bot
+    2. Add the ID to `~/.miniclaw/.env`
+    3. Restart miniclaw
+  </Accordion>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
+  <Accordion title="Voice messages don't work" icon="microphone">
+    Voice transcription requires a Groq API key.
+    
+    Add to `~/.miniclaw/.env`:
+    ```bash
+    GROQ_API_KEY=gsk_abc123xyz
+    ```
+    
+    Get a free key at [console.groq.com](https://console.groq.com/).
+  </Accordion>
+
+  <Accordion title="Agent can't find files" icon="folder">
+    The agent is sandboxed to three locations:
+    1. `agent/` (its working directory)
+    2. `~/.miniclaw/` (runtime data)
+    3. `../` (the parent repo)
+    
+    Files outside these locations require explicit user permission.
   </Accordion>
 </AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Customize behavior" icon="sliders" href="/configuration/agent-customization">
+    Edit `agent/CLAUDE.md` to change system prompt and rules
+  </Card>
+  <Card title="Add custom skills" icon="puzzle-piece" href="/development/customization">
+    Create your own slash commands in `.claude/skills/`
+  </Card>
+  <Card title="View source code" icon="code" href="https://github.com/AaronCQL/miniclaw">
+    Read the code and contribute on GitHub
+  </Card>
+  <Card title="Join the community" icon="users" href="https://github.com/AaronCQL/miniclaw/discussions">
+    Share your setup and ask questions
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

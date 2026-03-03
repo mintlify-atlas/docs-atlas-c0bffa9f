@@ -1,0 +1,407 @@
+---
+title: Scheduler
+description: Automated task execution with cron, intervals, and one-time runs
+---
+
+## Overview
+
+The **Scheduler** executes tasks on a schedule by invoking the agent with predefined prompts. Tasks are stored as JSON files in `data/tasks/` and support three scheduling types:
+
+- **once** - Run at a specific time, then delete
+- **cron** - Run on a cron schedule (recurring)
+- **interval** - Run every N duration (recurring)
+
+## Task File Format
+
+Tasks are JSON files in `data/tasks/<descriptive-name>.json`:
+
+```json
+{
+    "prompt": "Check my email and summarize unread messages",
+    "chat_id": 123456789,
+    "type": "cron",
+    "value": "0 9 * * *",
+    "status": "active",
+    "next_run": "2026-03-04T09:00:00+08:00",
+    "expires": "2026-12-31T23:59:59+08:00"
+}
+```
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `prompt` | string | Yes | What the agent should do when the task runs |
+| `chat_id` | int64 | Yes | Which Telegram chat to send results to |
+| `type` | string | Yes | Scheduling type: `"once"`, `"cron"`, or `"interval"` |
+| `value` | string | Depends | Schedule expression (cron string, duration like `"24h"`, or empty for "once") |
+| `status` | string | Yes | `"active"` or `"paused"` |
+| `next_run` | string | Yes | ISO 8601 timestamp of next execution |
+| `expires` | string | No | ISO 8601 timestamp after which task is auto-deleted |
+
+<Note>
+The `chat_id` must be one of the allowed chat IDs configured in `ALLOWED_CHAT_IDS`. Tasks for unauthorized chats will fail.
+</Note>
+
+## Schedule Types
+
+### Once
+
+Run the task at a specific time, then delete it:
+
+```json
+{
+    "prompt": "Remind me to check the logs",
+    "chat_id": 123456789,
+    "type": "once",
+    "value": "",
+    "status": "active",
+    "next_run": "2026-03-04T15:30:00+08:00"
+}
+```
+
+After execution, the task file is automatically deleted.
+
+### Cron
+
+Run on a cron schedule (uses standard 5-field cron syntax):
+
+```json
+{
+    "prompt": "Daily standup reminder",
+    "chat_id": 123456789,
+    "type": "cron",
+    "value": "0 9 * * 1-5",
+    "status": "active",
+    "next_run": "2026-03-04T09:00:00+08:00"
+}
+```
+
+Cron format: `minute hour day month weekday`
+
+**Examples:**
+- `0 9 * * *` - Every day at 9am
+- `0 9 * * 1-5` - Weekdays at 9am
+- `*/15 * * * *` - Every 15 minutes
+- `0 0 1 * *` - First day of every month at midnight
+
+After execution, `next_run` is automatically updated to the next scheduled time.
+
+### Interval
+
+Run every N duration:
+
+```json
+{
+    "prompt": "Check server status",
+    "chat_id": 123456789,
+    "type": "interval",
+    "value": "30m",
+    "status": "active",
+    "next_run": "2026-03-04T10:30:00+08:00"
+}
+```
+
+**Duration format:**
+- `30s` - 30 seconds
+- `5m` - 5 minutes
+- `2h` - 2 hours
+- `24h` - 24 hours
+- `168h` - 1 week (7 days)
+
+After execution, `next_run` is set to `now + interval`.
+
+## Creating Tasks
+
+You can ask the agent to create tasks for you:
+
+> "Remind me to check the deployment status every hour"
+
+The agent will:
+1. Determine the appropriate schedule type and value
+2. Calculate `next_run` based on your timezone (from `preferences.md`)
+3. Write the task file to `~/.miniclaw/data/tasks/`
+4. Confirm the task was created
+
+**Example agent response:**
+```
+I've created an interval task that will run every hour.
+
+File: ~/.miniclaw/data/tasks/check-deployment-status.json
+Next run: 2026-03-04T11:00:00+08:00
+```
+
+## Managing Tasks
+
+### List All Tasks
+
+> "List my scheduled tasks"
+
+The agent reads all JSON files in `~/.miniclaw/data/tasks/` and shows you the current schedule.
+
+### Pause a Task
+
+Set `status` to `"paused"`:
+
+```json
+{
+    "status": "paused"
+}
+```
+
+Paused tasks are skipped by the scheduler but not deleted.
+
+### Resume a Task
+
+Set `status` back to `"active"` and update `next_run` if needed.
+
+### Delete a Task
+
+Delete the JSON file:
+
+```bash
+rm ~/.miniclaw/data/tasks/task-name.json
+```
+
+Or ask the agent:
+
+> "Cancel the daily standup reminder task"
+
+## Execution Flow
+
+The Scheduler (`internal/scheduler.go`) runs continuously:
+
+```go
+func (s *Scheduler) Start(ctx context.Context) {
+    ticker := time.NewTicker(s.config.SchedulerInterval)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            s.executeDueTasks(ctx)
+        }
+    }
+}
+```
+
+Every `scheduler_interval` (default: 30s):
+
+1. **Load all tasks** from `data/tasks/*.json`
+2. **Filter** to active tasks with `next_run` in the past
+3. **Check expiration** - delete expired tasks
+4. **Execute task** - run the prompt through AgentRunner
+5. **Update or delete**:
+   - One-time tasks → delete
+   - Recurring tasks → calculate next `next_run` and save
+
+```go
+for _, task := range tasks {
+    if task.Status != "active" || task.NextRun == nil {
+        continue
+    }
+
+    // Check if expired
+    if task.Expires != nil {
+        expires, _ := time.Parse(time.RFC3339, *task.Expires)
+        if now.After(expires) {
+            s.deleteTask(task)
+            continue
+        }
+    }
+
+    // Check if due
+    nextRun, _ := time.Parse(time.RFC3339, *task.NextRun)
+    if now.Before(nextRun) {
+        continue
+    }
+
+    // Execute
+    output, err := s.runFunc(ctx, models.AgentInput{
+        ChatID: task.ChatID,
+        Prompt: task.Prompt,
+    })
+
+    if err == nil && output.Result != "" {
+        s.bot.SendMessage(task.ChatID, output.Result)
+    }
+
+    // Reschedule or delete
+    newNextRun := s.calculateNextRun(task)
+    if newNextRun == nil {
+        s.deleteTask(task)  // One-time task
+    } else {
+        task.NextRun = newNextRun
+        s.saveTask(task)
+    }
+}
+```
+
+## Rescheduling Logic
+
+After a task executes, the scheduler calculates the next run time:
+
+```go
+func (s *Scheduler) calculateNextRun(task models.Task) *string {
+    switch task.ScheduleType {
+    case "once":
+        return nil  // Delete task
+
+    case "cron":
+        parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+        sched, err := parser.Parse(task.ScheduleValue)
+        if err != nil {
+            return nil
+        }
+        next := sched.Next(time.Now()).Format(time.RFC3339)
+        return &next
+
+    case "interval":
+        dur, err := time.ParseDuration(task.ScheduleValue)
+        if err != nil {
+            return nil
+        }
+        next := time.Now().Add(dur).Format(time.RFC3339)
+        return &next
+    }
+}
+```
+
+<Info>
+Cron parsing uses the `github.com/robfig/cron/v3` library with standard 5-field syntax (minute, hour, day, month, weekday).
+</Info>
+
+## Task Expiration
+
+Set an `expires` timestamp to automatically delete tasks after a certain date:
+
+```json
+{
+    "prompt": "Check project deadline",
+    "chat_id": 123456789,
+    "type": "cron",
+    "value": "0 9 * * *",
+    "status": "active",
+    "next_run": "2026-03-04T09:00:00+08:00",
+    "expires": "2026-03-31T23:59:59+08:00"
+}
+```
+
+After March 31, 2026, the scheduler will delete this task automatically.
+
+**Use cases:**
+- Temporary reminders
+- Project-specific tasks
+- Time-limited notifications
+
+## Timezone Handling
+
+Timezones are tricky when scheduling tasks. Here's how miniclaw handles them:
+
+### User Timezone
+
+The user's preferred timezone is stored in `agent/preferences.md`:
+
+```markdown
+## Settings
+- Timezone: UTC+8
+```
+
+When the agent creates tasks based on user requests, it interprets times in this timezone.
+
+### Cron Expressions
+
+Cron expressions are evaluated in the **host system's local time**, not the user's timezone.
+
+If the user wants "9am in UTC+8" but the host runs in UTC, the agent must convert:
+- User wants: 9am UTC+8
+- Host timezone: UTC
+- Cron expression: `0 1 * * *` (9am UTC+8 = 1am UTC)
+
+The agent handles this conversion by:
+1. Reading the user's timezone from `preferences.md`
+2. Detecting the host timezone with `date +%Z%:z`
+3. Calculating the offset and adjusting the cron expression
+
+### next_run Timestamps
+
+The `next_run` field must include the correct UTC offset:
+
+```json
+{
+    "next_run": "2026-03-04T09:00:00+08:00"  // 9am UTC+8
+}
+```
+
+This ensures the scheduler evaluates the timestamp correctly regardless of host timezone.
+
+## Task Queue Integration
+
+Scheduled tasks run through the same per-chat queue as regular messages:
+
+```go
+func (a *App) runQueuedTask(ctx context.Context, input models.AgentInput) (models.AgentOutput, error) {
+    cs := a.getChatState(input.ChatID)
+    cs.mu.Lock()
+    defer cs.mu.Unlock()
+    return a.agentRunner.Run(ctx, input, nil)
+}
+```
+
+This means:
+- Scheduled tasks queue behind manual messages
+- Only one task or message runs per chat at a time
+- Tasks don't interrupt ongoing conversations
+
+<Tip>
+If a task runs while you're chatting with the agent, it will wait until the current conversation finishes before executing.
+</Tip>
+
+## Example: Restart Confirmation
+
+The `/restart` skill uses scheduled tasks to confirm successful restart:
+
+```bash
+for CHAT_ID in "${CHAT_IDS[@]}"; do
+  cat > ~/.miniclaw/data/tasks/restart-confirmation-${CHAT_ID}.json << EOF
+{
+    "prompt": "Send a short message confirming that miniclaw has been rebuilt and restarted successfully.",
+    "chat_id": ${CHAT_ID},
+    "type": "once",
+    "value": "",
+    "status": "active",
+    "next_run": "${TIMESTAMP}"
+}
+EOF
+done
+```
+
+The restart command:
+1. Schedules a task 10 seconds in the future
+2. Restarts the service (killing the current process)
+3. After restart, the scheduler picks up the task and sends confirmation
+
+This ensures users know the restart succeeded, even though the restart itself kills the agent mid-execution.
+
+## Error Handling
+
+If a task execution fails:
+- The error is logged: `[task] error running <filename>: <error>`
+- The task is still rescheduled (if recurring) or deleted (if one-time)
+- No message is sent to the user
+
+If parsing a task file fails:
+- The error is logged: `error parsing task file <filename>: <error>`
+- The task is skipped
+- The file is not deleted (so you can fix it manually)
+
+## Performance
+
+The scheduler is lightweight:
+- Polls every 30 seconds by default (configurable via `SCHEDULER_INTERVAL`)
+- Only loads task files when checking for due tasks
+- Uses efficient time comparisons
+
+With hundreds of tasks, the overhead is negligible.

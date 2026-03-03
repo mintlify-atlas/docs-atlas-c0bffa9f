@@ -1,0 +1,401 @@
+---
+title: Skills
+description: Slash commands that inject specialized instructions into the agent
+---
+
+## Overview
+
+**Skills** are specialized instruction sets invoked via slash commands in Telegram. They guide the agent through specific workflows like transcribing audio, restarting the service, or registering bot commands.
+
+Skills are markdown files with YAML frontmatter stored in `.claude/skills/`:
+
+```
+.claude/skills/
+├── transcribe/
+│   └── SKILL.md
+├── restart/
+│   └── SKILL.md
+├── commands/
+│   └── SKILL.md
+├── setup/
+│   └── SKILL.md
+└── diff/
+    └── SKILL.md
+```
+
+## How Skills Work
+
+When you type a slash command:
+
+1. Telegram sends it as a regular message (e.g., `/transcribe`)
+2. The command triggers Claude CLI's skill system
+3. Claude loads the corresponding `SKILL.md` file
+4. The agent follows the instructions in the skill
+
+Skills are **just instructions** - they don't add new tools or capabilities. They guide the agent to use existing tools in a specific way.
+
+## Skill File Format
+
+Skills use markdown with YAML frontmatter:
+
+```markdown
+---
+name: transcribe
+description: Transcribe audio/voice files using Groq Whisper API
+allowed-tools: "Bash(curl *)"
+---
+
+# Transcribe Audio
+
+Transcribe a voice or audio file using the Groq Whisper API...
+
+## Step 1: Identify the audio file
+
+Find the audio file path from the conversation context...
+
+## Step 2: Transcribe
+
+Run this curl command...
+```
+
+### Frontmatter Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Command name (used as `/name` in Telegram) |
+| `description` | Yes | Short description shown in command menu |
+| `allowed-tools` | No | Tool restrictions (e.g., `"Bash(curl *)"`) |
+| `disable-model-invocation` | No | If `true`, prevent streaming to the model |
+
+<Note>
+The `allowed-tools` field restricts which tools the agent can use during skill execution. This prevents accidental file modifications or other side effects.
+</Note>
+
+## Built-in Skills
+
+### /transcribe
+
+**Purpose:** Transcribe audio/voice files using Groq Whisper API
+
+**How it works:**
+1. Extracts audio file path from message context
+2. Calls Groq API with `curl`
+3. Parses JSON response
+4. Responds to the transcribed text naturally
+
+**Requirements:**
+- `GROQ_API_KEY` environment variable must be set
+- Audio file attached to message or replied-to message
+
+**Example usage:**
+- Send a voice message
+- The agent automatically transcribes it and responds
+
+```markdown
+---
+name: transcribe
+description: Transcribe audio/voice files using Groq Whisper API
+allowed-tools: "Bash(curl *)"
+---
+
+# Transcribe Audio
+
+## Step 2: Transcribe
+
+Run this curl command, replacing `<FILE_PATH>` with the actual file path:
+
+```bash
+curl -s https://api.groq.com/openai/v1/audio/transcriptions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -F "file=@<FILE_PATH>" \
+  -F "model=whisper-large-v3-turbo" \
+  -F "response_format=json" \
+  -F "language=en"
+```
+```
+
+### /restart
+
+**Purpose:** Rebuild miniclaw and restart the background service
+
+**How it works:**
+1. Loads environment variables
+2. Detects platform (Linux systemd or macOS launchd)
+3. Rebuilds binary with `go install`
+4. Schedules post-restart confirmation task
+5. Restarts service (kills current process)
+
+**Platform support:**
+- **Linux:** `systemctl --user restart miniclaw`
+- **macOS:** `launchctl kickstart -k gui/$(id -u)/com.miniclaw.agent`
+
+**Example usage:**
+```
+User: /restart
+Agent: Restarting miniclaw...
+[10 seconds later]
+Agent: miniclaw has been rebuilt and restarted successfully.
+```
+
+<Warning>
+The `/restart` command kills the current agent process. The confirmation message comes from a scheduled task after the restart completes.
+</Warning>
+
+### /commands
+
+**Purpose:** Register bot commands with Telegram
+
+**How it works:**
+1. Lists all skill directories in `.claude/skills/`
+2. Reads each `SKILL.md` and extracts `name` and `description`
+3. Combines with hardcoded commands (`/chatid`, `/cancel`, `/compact`)
+4. Calls Telegram's `setMyCommands` API
+
+**Example usage:**
+```
+User: /commands
+Agent: Registered 8 commands:
+- /transcribe — Transcribe audio/voice files
+- /restart — Rebuild and restart miniclaw
+- /commands — Register bot commands
+- /setup — Initial setup wizard
+- /diff — Show git diff
+- /chatid — Get your Telegram chat ID
+- /cancel — Cancel the current request
+- /compact — Compact conversation context
+```
+
+After running this, the commands appear in Telegram's command menu (tap `/` to see them).
+
+### /setup
+
+**Purpose:** Initial setup wizard for configuring miniclaw
+
+**How it works:**
+- Guides you through environment configuration
+- Sets up systemd/launchd service
+- Configures Telegram bot
+
+**Typical usage:** Run once after installation.
+
+### /diff
+
+**Purpose:** Show git diff of current changes
+
+**How it works:**
+- Runs `git diff` in the repo directory
+- Formats output for Telegram
+
+**Example usage:**
+```
+User: /diff
+Agent: [shows current git changes]
+```
+
+## Creating Custom Skills
+
+You can create your own skills by adding markdown files to `.claude/skills/`.
+
+### Step 1: Create Skill Directory
+
+```bash
+mkdir -p .claude/skills/myskill
+```
+
+### Step 2: Write SKILL.md
+
+Create `.claude/skills/myskill/SKILL.md`:
+
+```markdown
+---
+name: myskill
+description: Does something useful
+allowed-tools: "Bash(*), Read(*)"
+---
+
+# My Custom Skill
+
+This skill does X, Y, and Z.
+
+## Step 1: Do X
+
+Run this command:
+```bash
+echo "Hello from custom skill"
+```
+
+## Step 2: Do Y
+
+...
+```
+
+### Step 3: Register Command
+
+Run `/commands` to register the new skill with Telegram.
+
+### Step 4: Test
+
+Type `/myskill` in Telegram and verify the agent follows your instructions.
+
+## Skill Best Practices
+
+### Clear Step-by-Step Instructions
+
+Break workflows into numbered steps:
+
+```markdown
+## Step 1: Validate input
+## Step 2: Process data
+## Step 3: Return result
+```
+
+This helps the agent follow the workflow reliably.
+
+### Restrict Tools
+
+Use `allowed-tools` to prevent unintended side effects:
+
+```yaml
+allowed-tools: "Bash(curl *), Bash(jq *)"
+```
+
+This allows only specific Bash commands.
+
+### Handle Errors
+
+Include error handling instructions:
+
+```markdown
+If the request fails, check that `$API_KEY` is set.
+Report the error to the user and do not continue.
+```
+
+### Provide Examples
+
+Show concrete examples with real commands:
+
+```markdown
+```bash
+curl -s https://api.example.com/data \
+  -H "Authorization: Bearer $TOKEN"
+```
+```
+
+### Disable Model Invocation for Non-AI Tasks
+
+For simple automation tasks that don't need AI reasoning:
+
+```yaml
+disable-model-invocation: true
+```
+
+This makes execution faster and cheaper.
+
+## Skill Discovery
+
+To see available skills:
+
+1. **In Telegram:** Tap `/` to open the command menu
+2. **Programmatically:** Run `/commands` to list all registered commands
+3. **Manually:** `ls .claude/skills/` to see skill directories
+
+## Command Registration
+
+Telegram requires explicit command registration via the `setMyCommands` API. miniclaw automates this with the `/commands` skill.
+
+**When to re-register:**
+- After adding a new skill
+- After changing a skill description
+- After updating miniclaw (if new built-in skills were added)
+
+The registration is idempotent - running `/commands` multiple times just overwrites the list.
+
+## Skill vs Direct Prompts
+
+When should you use a skill vs just asking the agent directly?
+
+**Use a skill when:**
+- The workflow has multiple steps that must be followed in order
+- You want to restrict tool usage for safety
+- You need to document a reusable process
+- The task is automated (e.g., triggered by a scheduled task)
+
+**Use a direct prompt when:**
+- The task is one-off and exploratory
+- You want the agent to figure out the approach
+- The workflow isn't well-defined yet
+
+**Example:**
+
+- Direct prompt: "Can you analyze this CSV and tell me the trends?"
+- Skill: `/generate_report` (follows standardized reporting format)
+
+## Under the Hood
+
+Skills are implemented by Claude CLI's skill system, not by miniclaw. When you invoke a skill:
+
+1. Telegram sends the message (e.g., `/transcribe`)
+2. miniclaw passes it to Claude CLI as a regular prompt
+3. Claude CLI detects the slash command
+4. Claude CLI loads `.claude/skills/transcribe/SKILL.md`
+5. The skill instructions are injected into the agent's context
+6. The agent follows the skill instructions
+
+miniclaw's only role is:
+- Providing the working directory where `.claude/skills/` exists
+- Handling the skill response like any other agent output
+
+## Troubleshooting
+
+### Skill not found
+
+**Problem:** `/myskill` doesn't work
+
+**Solution:**
+1. Verify the skill directory exists: `ls .claude/skills/myskill/`
+2. Verify `SKILL.md` exists and has valid YAML frontmatter
+3. Run `/commands` to re-register
+4. Check Claude CLI logs for parsing errors
+
+### Skill executes wrong behavior
+
+**Problem:** Agent doesn't follow skill instructions
+
+**Solution:**
+1. Review the skill markdown - be more explicit
+2. Add "Do NOT skip steps" or "Follow in order" reminders
+3. Test with simpler instructions first
+4. Check if `allowed-tools` is too restrictive
+
+### Telegram doesn't show command in menu
+
+**Problem:** Command doesn't appear when typing `/`
+
+**Solution:**
+1. Run `/commands` to register skills
+2. Restart Telegram app (sometimes needed to refresh command list)
+3. Verify the skill has a `description` field
+
+## Advanced: Multi-File Skills
+
+Skills can include multiple files in their directory:
+
+```
+.claude/skills/myskill/
+├── SKILL.md
+├── template.json
+└── helper.sh
+```
+
+Reference them in the skill instructions:
+
+```markdown
+## Step 2: Use template
+
+Read the template file:
+```bash
+cat ../.claude/skills/myskill/template.json
+```
+```
+
+This allows complex skills to bundle reference data, scripts, or configuration files.

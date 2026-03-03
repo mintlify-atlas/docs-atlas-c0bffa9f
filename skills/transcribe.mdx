@@ -1,0 +1,150 @@
+---
+title: Transcribe Skill
+description: Transcribe audio and voice messages
+---
+
+## Overview
+
+The `/transcribe` skill transcribes audio and voice messages using the Groq Whisper API, then responds to the transcribed text naturally as if you had typed it. This enables voice interaction with your miniclaw bot.
+
+## Usage
+
+The skill is automatically invoked when you send a voice message to the bot (if `GROQ_API_KEY` is configured). You can also manually invoke it:
+
+```bash
+/transcribe
+```
+
+The skill will look for an attached audio file in the message or replied-to message.
+
+## What It Does
+
+### 1. Identify Audio File
+
+Searches the conversation context for an audio file attachment. Looks for patterns like:
+- `[File attached: /path/to/audio.ogg]`
+- `[Replied-to message has file attached: /path/to/audio.mp3]`
+
+If no audio file is found, informs you and stops.
+
+### 2. Transcribe Using Groq Whisper
+
+Calls the Groq Whisper API with the audio file:
+
+```bash
+curl -s https://api.groq.com/openai/v1/audio/transcriptions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -F "file=@<FILE_PATH>" \
+  -F "model=whisper-large-v3-turbo" \
+  -F "response_format=json" \
+  -F "language=en"
+```
+
+**API Response:**
+```json
+{"text": "transcribed content here"}
+```
+
+**Error Handling:**
+- Checks that `$GROQ_API_KEY` environment variable is set
+- Verifies the audio file exists
+- Reports any API errors
+
+### 3. Respond Naturally
+
+Treats the transcribed text as if you had typed it as a normal message. The agent responds to the content naturally, without mentioning the transcription process.
+
+## Requirements
+
+### Groq API Key
+
+You need a free Groq API key for transcription:
+
+1. Sign up at [console.groq.com](https://console.groq.com)
+2. Create an API key
+3. Add it to `~/.miniclaw/.env`:
+
+```bash
+GROQ_API_KEY=gsk_...
+```
+
+4. Restart miniclaw:
+
+```bash
+# Linux
+systemctl --user restart miniclaw
+
+# macOS  
+launchctl kickstart -k gui/$(id -u)/com.miniclaw.agent
+```
+
+### Free Tier Limits
+
+Groq's free tier is generous:
+- **2,000 requests per day**
+- **8 hours of audio per day**
+
+This is more than enough for typical personal use.
+
+## Supported Audio Formats
+
+The Groq Whisper API supports:
+- `.mp3`
+- `.mp4`
+- `.mpeg`
+- `.mpga`
+- `.m4a`
+- `.wav`
+- `.webm`
+- `.ogg` (Telegram voice messages)
+
+## Example
+
+**You:** *[Send voice message: "What's the weather today?"]*
+
+**Bot:** I don't have access to real-time weather data, but I can help you set up a script to fetch it. Would you like me to show you how?
+
+The transcription happens automatically—the bot responds to your voice message as if you typed the question.
+
+## Allowed Tools
+
+The transcribe skill can use:
+- `Bash(curl *)`: For calling the Groq API
+
+## Troubleshooting
+
+### "GROQ_API_KEY not set"
+
+Add your API key to `~/.miniclaw/.env`:
+
+```bash
+GROQ_API_KEY=gsk_your_key_here
+```
+
+Then restart miniclaw with `/restart`.
+
+### "No audio file found"
+
+Make sure you:
+- Attached an audio file to your message, or
+- Replied to a message with an audio file attached
+
+Telegram voice messages are automatically downloaded and passed to the transcribe skill.
+
+### "API request failed"
+
+Common causes:
+- Invalid or expired API key
+- Rate limit exceeded (2,000 requests/day)
+- Audio file is corrupt or in an unsupported format
+- Network connectivity issues
+
+Check the error message for details.
+
+## Language Support
+
+The skill is currently configured for English (`-F "language=en"`). Whisper supports 99 languages, but the skill would need to be modified to detect or accept a different language parameter.
+
+## Privacy Note
+
+Audio files are sent to Groq's API for transcription. Per [Groq's privacy policy](https://groq.com/privacy-policy/), they do not use API data to train models. However, be mindful of what you record and send.

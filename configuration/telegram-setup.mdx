@@ -1,0 +1,330 @@
+---
+title: Telegram Setup
+description: Set up your Telegram bot and configure chat access
+---
+
+This guide walks you through creating a Telegram bot, obtaining the bot token, and configuring chat access for miniclaw.
+
+## Creating a Telegram Bot
+
+<Steps>
+  <Step title="Open BotFather">
+    Open Telegram and search for [@BotFather](https://t.me/BotFather) or go directly to the link.
+    
+    BotFather is Telegram's official bot for creating and managing bots.
+  </Step>
+  
+  <Step title="Create a new bot">
+    Send the `/newbot` command to BotFather.
+    
+    BotFather will ask you two questions:
+    
+    1. **Bot name** — The display name shown in contacts and chats (e.g., "My Personal Assistant")
+    2. **Bot username** — The unique identifier, must end in `bot` (e.g., `mypersonal_assistant_bot`)
+  </Step>
+  
+  <Step title="Save your bot token">
+    After creating the bot, BotFather will provide a **bot token** that looks like this:
+    
+    ```
+    1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+    ```
+    
+    <Warning>
+      Keep this token secret! Anyone with this token can control your bot. Never commit it to version control.
+    </Warning>
+    
+    Copy this token and add it to your `~/.miniclaw/.env` file:
+    
+    ```bash
+    TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+    ```
+  </Step>
+  
+  <Step title="Start chatting with your bot">
+    Search for your bot by username in Telegram and start a conversation.
+    
+    Send `/start` to begin. At this point, the bot won't respond until miniclaw is running and configured.
+  </Step>
+</Steps>
+
+## Finding Your Chat ID
+
+To restrict bot access to specific chats, you need to find your chat ID.
+
+### For Private Chats
+
+<Steps>
+  <Step title="Start miniclaw without ALLOWED_CHAT_IDS">
+    First, run miniclaw without setting `ALLOWED_CHAT_IDS` in your `.env` file. This allows any chat to interact with the bot temporarily.
+  </Step>
+  
+  <Step title="Use the /chatid command">
+    In your private chat with the bot, send:
+    
+    ```
+    /chatid
+    ```
+    
+    The bot will reply with your chat ID:
+    
+    ```
+    Chat ID: 123456789
+    ```
+  </Step>
+  
+  <Step title="Add to .env and restart">
+    Copy the chat ID and add it to `~/.miniclaw/.env`:
+    
+    ```bash
+    ALLOWED_CHAT_IDS=123456789
+    ```
+    
+    Restart miniclaw for the change to take effect.
+  </Step>
+</Steps>
+
+### For Group Chats
+
+<Steps>
+  <Step title="Add bot to group">
+    1. Create a Telegram group or use an existing one
+    2. Add your bot to the group (use "Add Member" and search for your bot)
+    3. Grant the bot admin permissions if you want it to see all messages (optional)
+  </Step>
+  
+  <Step title="Get group chat ID">
+    In the group chat, send:
+    
+    ```
+    /chatid
+    ```
+    
+    The bot will reply with the group chat ID:
+    
+    ```
+    Chat ID: -1001234567890
+    ```
+    
+    <Note>
+      Group chat IDs are always negative numbers. Private chat IDs are positive.
+    </Note>
+  </Step>
+  
+  <Step title="Add to .env">
+    Add the group chat ID to your allowed chats:
+    
+    ```bash
+    ALLOWED_CHAT_IDS=123456789,-1001234567890
+    ```
+    
+    This allows both your private chat and the group chat to use the bot.
+  </Step>
+</Steps>
+
+## Chat ID Configuration
+
+### Multiple Chat IDs
+
+You can allow multiple chats by separating chat IDs with commas:
+
+```bash
+ALLOWED_CHAT_IDS=123456789,987654321,-1001234567890
+```
+
+This configuration allows:
+- Two private chats: `123456789` and `987654321`
+- One group chat: `-1001234567890`
+
+### No Restrictions
+
+To allow any chat to use your bot (not recommended for production):
+
+```bash
+# Leave ALLOWED_CHAT_IDS empty or comment it out
+# ALLOWED_CHAT_IDS=
+```
+
+Or remove the line entirely from your `.env` file.
+
+<Warning>
+  Without `ALLOWED_CHAT_IDS`, anyone who knows your bot's username can interact with it. This is fine for testing but not recommended for personal assistants.
+</Warning>
+
+## Access Control Behavior
+
+When a chat ID is not in the allowed list:
+
+- The bot receives the message but does not respond
+- The unauthorized attempt is logged to the console
+- No error message is sent to the unauthorized user
+
+This provides security through silence — unauthorized users won't know if the bot is running or just ignoring them.
+
+## Testing Your Setup
+
+After configuring your bot token and chat IDs:
+
+<Steps>
+  <Step title="Start miniclaw">
+    ```bash
+    cd /path/to/miniclaw
+    go run cmd/main.go
+    ```
+    
+    Or if running as a service:
+    ```bash
+    sudo systemctl start miniclaw  # Linux
+    launchctl start gui/$(id -u)/com.miniclaw.bot  # macOS
+    ```
+  </Step>
+  
+  <Step title="Check connection">
+    Look for this log message:
+    
+    ```
+    [telegram] started polling for updates
+    ```
+    
+    This means the bot is connected and listening for messages.
+  </Step>
+  
+  <Step title="Send a test message">
+    In your Telegram chat with the bot, send:
+    
+    ```
+    Hello!
+    ```
+    
+    The bot should respond with a greeting (the exact response depends on your agent configuration).
+  </Step>
+  
+  <Step title="Test chat restrictions">
+    If you have `ALLOWED_CHAT_IDS` set:
+    
+    1. Try messaging the bot from an unauthorized account
+    2. The bot should not respond
+    3. Check the console logs for a rejection message
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Bot doesn't respond
+
+<AccordionGroup>
+  <Accordion title="Check if miniclaw is running">
+    Verify the process is running:
+    
+    ```bash
+    # If running directly
+    ps aux | grep miniclaw
+    
+    # If running as service (Linux)
+    sudo systemctl status miniclaw
+    
+    # If running as service (macOS)
+    launchctl list | grep miniclaw
+    ```
+  </Accordion>
+  
+  <Accordion title="Verify bot token">
+    Check that `TELEGRAM_BOT_TOKEN` in `~/.miniclaw/.env` matches the token from BotFather.
+    
+    The token should look like: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`
+    
+    If you lost your token, ask BotFather for it:
+    ```
+    /token
+    @your_bot_username
+    ```
+  </Accordion>
+  
+  <Accordion title="Check chat ID restrictions">
+    If your chat ID is not in `ALLOWED_CHAT_IDS`, the bot will ignore your messages.
+    
+    Temporarily remove `ALLOWED_CHAT_IDS` from `.env` and restart to test if this is the issue.
+  </Accordion>
+  
+  <Accordion title="Restart the bot">
+    Changes to `.env` require a restart:
+    
+    ```bash
+    # If running directly: Ctrl+C then restart
+    
+    # If running as service (Linux)
+    sudo systemctl restart miniclaw
+    
+    # If running as service (macOS)  
+    launchctl kickstart -k gui/$(id -u)/com.miniclaw.bot
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### "Invalid bot token" error
+
+- Verify you copied the entire token from BotFather
+- Check for extra spaces or newlines in your `.env` file
+- The token format should be: `digits:alphanumeric_string`
+
+### Bot responds in wrong chat
+
+- Verify the chat IDs in `ALLOWED_CHAT_IDS` are correct
+- Remember: private chat IDs are positive, group chat IDs are negative
+- Use `/chatid` in each chat to verify the correct ID
+
+## Bot Settings (Optional)
+
+You can configure additional bot settings via BotFather:
+
+<Steps>
+  <Step title="Open BotFather">
+    Send `/mybots` to BotFather and select your bot.
+  </Step>
+  
+  <Step title="Useful settings">
+    - **Edit Description** — The text users see before they start chatting
+    - **Edit About** — Short description shown in the bot's profile
+    - **Edit Botpic** — Set a profile picture for your bot
+    - **Edit Commands** — Define slash commands that show in the Telegram UI
+  </Step>
+</Steps>
+
+### Recommended Commands
+
+To set up command hints in the Telegram UI:
+
+1. Send `/setcommands` to BotFather
+2. Select your bot
+3. Send this list:
+
+```
+start - Start the bot
+chatid - Show the current chat ID
+cancel - Cancel the current operation
+help - Show help information
+```
+
+Users will see these commands when they type `/` in the chat.
+
+## Security Best Practices
+
+<Card title="Protect your bot token" icon="shield">
+  - Never share your bot token publicly
+  - Don't commit `.env` to version control (add it to `.gitignore`)
+  - Use environment variables in production, not `.env` files
+  - Regenerate your token if it's ever exposed (via BotFather's `/revoke` command)
+</Card>
+
+<Card title="Restrict chat access" icon="lock">
+  - Always set `ALLOWED_CHAT_IDS` in production
+  - Review and update the allowed list regularly
+  - Remove chat IDs when people leave your team/family
+  - Monitor logs for unauthorized access attempts
+</Card>
+
+<Card title="Use groups carefully" icon="users">
+  - Grant admin permissions only if the bot needs to see all messages
+  - Without admin permissions, the bot only sees commands and replies to its messages
+  - Consider using a private group for sensitive automations
+</Card>

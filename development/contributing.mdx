@@ -1,0 +1,305 @@
+---
+title: Contributing
+description: How to contribute to miniclaw
+---
+
+miniclaw is designed to be forked and customized. The philosophy is: **keep it small, keep it hackable**.
+
+## Philosophy
+
+miniclaw intentionally stays minimal:
+
+- **Small codebase** — The entire project is ~2,000 lines of Go. This means Claude can read and modify the full source at runtime.
+- **Few dependencies** — Only three: a Telegram library, a cron parser, and a dotenv loader. No frameworks, no ORMs.
+- **Self-modifying** — The agent can edit its own code, rebuild, and restart. No plugin system needed when your agent *is* the plugin system.
+- **Forkable** — Designed to be read in one sitting and adapted to your needs.
+
+We encourage forking over feature requests. If you need something, build it. Share it if others might find it useful.
+
+## Getting Started
+
+### Prerequisites
+
+- **Go 1.23+** — [Install Go](https://go.dev/dl/)
+- **Claude CLI** — [Install Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- **Git** — For version control
+
+### Fork and Clone
+
+```bash
+git clone https://github.com/YourUsername/miniclaw.git
+cd miniclaw
+```
+
+### Install Dependencies
+
+```bash
+go mod download
+```
+
+### Build
+
+```bash
+go build -o miniclaw ./cmd/miniclaw/
+```
+
+Or install to `$GOPATH/bin`:
+
+```bash
+go install ./cmd/miniclaw/
+```
+
+### Run Locally
+
+```bash
+cp .env.example ~/.miniclaw/.env
+# Edit ~/.miniclaw/.env with your tokens
+./miniclaw
+```
+
+## Development Workflow
+
+### 1. Make Changes
+
+Edit the source files directly. The codebase is small enough to explore:
+
+- `cmd/miniclaw/main.go` — Entry point
+- `internal/app.go` — Main coordinator
+- `internal/runner.go` — Claude CLI integration
+- `internal/scheduler.go` — Task scheduling
+- `internal/telegram.go` — Telegram bot
+
+### 2. Run Tests
+
+```bash
+go test ./...
+```
+
+Tests are colocated with source files:
+- `internal/app_test.go`
+- `internal/runner_test.go`
+- `internal/scheduler_test.go`
+- `internal/status_test.go`
+- `internal/telegram_test.go`
+
+### 3. Format Code
+
+```bash
+go fmt ./...
+```
+
+### 4. Run Locally
+
+```bash
+go run ./cmd/miniclaw/
+```
+
+Or rebuild the binary:
+
+```bash
+go build -o miniclaw ./cmd/miniclaw/
+./miniclaw
+```
+
+### 5. Test with Telegram
+
+Send messages to your bot on Telegram to test changes.
+
+Use `/restart` to rebuild and restart miniclaw from within a conversation.
+
+## Testing Changes
+
+### Unit Tests
+
+Add tests for new functionality:
+
+```go
+// internal/myfeature_test.go
+package internal
+
+import "testing"
+
+func TestMyFeature(t *testing.T) {
+    // Arrange
+    input := "test input"
+    expected := "expected output"
+
+    // Act
+    result := MyFeature(input)
+
+    // Assert
+    if result != expected {
+        t.Errorf("expected %q, got %q", expected, result)
+    }
+}
+```
+
+Run tests:
+
+```bash
+go test ./internal -v
+```
+
+### Integration Testing
+
+1. Create a test bot via [@BotFather](https://t.me/BotFather)
+2. Set `TELEGRAM_BOT_TOKEN` in `~/.miniclaw/.env`
+3. Run miniclaw locally
+4. Send messages to the test bot
+
+### Testing Skills
+
+Create a skill in `.claude/skills/test/SKILL.md` and invoke it:
+
+```bash
+# In Telegram
+/test
+```
+
+Check logs for errors:
+
+```bash
+journalctl --user -u miniclaw -f  # Linux
+tail -f /tmp/miniclaw.log          # macOS
+```
+
+## Submitting Changes
+
+We welcome contributions that align with the project philosophy.
+
+### What We're Looking For
+
+- **Bug fixes** — If something's broken, fix it
+- **Documentation improvements** — Clarify confusing sections
+- **Performance optimizations** — Make it faster without adding complexity
+- **Test coverage** — Add tests for untested code paths
+
+### What We're **Not** Looking For
+
+- **Large features** — Fork instead and share your customization
+- **Frameworks or abstractions** — Keep it simple and direct
+- **New dependencies** — Only if absolutely necessary
+
+### Pull Request Process
+
+1. **Fork the repo**
+2. **Create a branch**:
+   ```bash
+   git checkout -b fix/your-bugfix
+   ```
+3. **Make your changes**
+4. **Run tests**:
+   ```bash
+   go test ./...
+   go fmt ./...
+   ```
+5. **Commit with a clear message**:
+   ```bash
+   git commit -m "Fix session persistence on restart"
+   ```
+6. **Push to your fork**:
+   ```bash
+   git push origin fix/your-bugfix
+   ```
+7. **Open a pull request** on GitHub
+
+### Commit Messages
+
+Use clear, concise commit messages:
+
+- `Fix scheduler crash on invalid cron expression`
+- `Add test for session persistence`
+- `Update README setup instructions`
+- `Remove unused config field`
+
+## Reporting Issues
+
+Found a bug? [Open an issue](https://github.com/AaronCQL/miniclaw/issues) on GitHub.
+
+Include:
+- **Description** — What happened vs. what you expected
+- **Steps to reproduce**
+- **Logs** — Output from `journalctl` or `/tmp/miniclaw.log`
+- **Environment** — OS, Go version, miniclaw version
+
+Example:
+
+```
+### Description
+Scheduler crashes when a task file contains invalid JSON.
+
+### Steps to Reproduce
+1. Create ~/.miniclaw/data/tasks/invalid.json with malformed JSON
+2. Wait for scheduler to run
+3. Observe crash in logs
+
+### Logs
+```
+[scheduler] error parsing task file invalid.json: unexpected end of JSON input
+panic: runtime error: invalid memory address or nil pointer dereference
+```
+
+### Environment
+- OS: Ubuntu 22.04
+- Go: 1.23.1
+- miniclaw: commit abc123
+```
+
+## Sharing Your Customizations
+
+Built something cool? Share it!
+
+### Blog Posts
+
+Write about your customizations:
+- How you extended miniclaw
+- Use cases you've implemented
+- Lessons learned
+
+Tag [@AaronCQL](https://twitter.com/AaronCQL) on Twitter.
+
+### Gists and Repos
+
+Share skills, scripts, or config snippets:
+- Custom skills as GitHub Gists
+- Forked repos with your modifications
+- Helper scripts for common tasks
+
+### Discussions
+
+Start a [discussion](https://github.com/AaronCQL/miniclaw/discussions) on GitHub:
+- Show off your setup
+- Ask for feedback
+- Share tips and tricks
+
+## Code Style
+
+Follow Go conventions:
+
+- **Run `go fmt`** — Standard formatting
+- **Use clear names** — `AgentRunner`, not `AR`
+- **Keep functions small** — One responsibility each
+- **Comment non-obvious code** — Explain *why*, not *what*
+- **Avoid clever tricks** — Clarity over cleverness
+
+## Project Maintenance
+
+miniclaw is maintained by [Aaron Chew](https://github.com/AaronCQL).
+
+Expect slow, deliberate development. The goal is to keep the project small and stable, not to add features rapidly.
+
+## License
+
+miniclaw is released under the [MIT License](https://github.com/AaronCQL/miniclaw/blob/main/LICENSE). Fork it, modify it, share it.
+
+## Resources
+
+- **GitHub Repository**: [github.com/AaronCQL/miniclaw](https://github.com/AaronCQL/miniclaw)
+- **Discussions**: [GitHub Discussions](https://github.com/AaronCQL/miniclaw/discussions)
+- **Issues**: [GitHub Issues](https://github.com/AaronCQL/miniclaw/issues)
+- **Claude Code**: [Claude CLI Documentation](https://docs.anthropic.com/en/docs/claude-code)
+- **Go Documentation**: [go.dev](https://go.dev)
+
+## Questions?
+
+Open a [discussion](https://github.com/AaronCQL/miniclaw/discussions) or [issue](https://github.com/AaronCQL/miniclaw/issues) on GitHub.

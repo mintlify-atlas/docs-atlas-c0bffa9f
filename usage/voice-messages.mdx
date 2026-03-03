@@ -1,0 +1,196 @@
+---
+title: Voice Messages
+description: Send voice messages and get transcriptions using Groq Whisper
+---
+
+## Overview
+
+Miniclaw supports voice messages and audio files. When you send a voice message, the bot automatically transcribes it using the Groq Whisper API and responds to the transcribed text as if you had typed it.
+
+## Supported Formats
+
+The bot accepts the following audio formats:
+
+- **OGG** (`.ogg`) — Telegram's default voice message format
+- **OGA** (`.oga`) — Alternative Opus format (converted to `.ogg` for Whisper)
+- **MP3** (`.mp3`) — Standard audio format
+- **WAV** (`.wav`) — Uncompressed audio
+
+<Note>
+Telegram voice messages are typically sent as `.oga` files and are automatically converted to `.ogg` for compatibility with the Groq Whisper API.
+</Note>
+
+## Requirements
+
+### Groq API Key
+
+Voice transcription requires a valid Groq API key with access to the Whisper models.
+
+<Steps>
+  <Step title="Get a Groq API key">
+    Sign up at [console.groq.com](https://console.groq.com) and create an API key
+  </Step>
+  
+  <Step title="Set environment variable">
+    Add `GROQ_API_KEY` to your environment when running miniclaw:
+    
+    ```bash
+    export GROQ_API_KEY="gsk_..."
+    miniclaw
+    ```
+  </Step>
+  
+  <Step title="Verify it works">
+    Send a voice message to test the transcription
+  </Step>
+</Steps>
+
+<Warning>
+If `GROQ_API_KEY` is not set, the bot will not be able to transcribe voice messages and will report an error.
+</Warning>
+
+## How It Works
+
+<Steps>
+  <Step title="Record and send">
+    Hold the microphone button in Telegram and record your voice message
+  </Step>
+  
+  <Step title="Bot downloads audio">
+    The bot downloads the audio file to `~/.miniclaw/files/<chat_id>/`
+  </Step>
+  
+  <Step title="Transcription via Groq">
+    The bot sends the audio file to Groq's Whisper API for transcription
+  </Step>
+  
+  <Step title="Agent responds">
+    The transcribed text is treated as a normal text message and the agent responds accordingly
+  </Step>
+</Steps>
+
+## Transcription Flow
+
+When the agent receives a voice message, it automatically invokes the transcription skill:
+
+```bash
+curl -s https://api.groq.com/openai/v1/audio/transcriptions \
+  -H "Authorization: Bearer $GROQ_API_KEY" \
+  -F "file=@<FILE_PATH>" \
+  -F "model=whisper-large-v3-turbo" \
+  -F "response_format=json" \
+  -F "language=en"
+```
+
+The API returns:
+
+```json
+{
+  "text": "transcribed content here"
+}
+```
+
+## Example Conversations
+
+<Tabs>
+  <Tab title="Simple Request">
+    **You (voice):** "What's the weather like today?"
+    
+    **Bot:** "I'll check the weather for you..."
+  </Tab>
+  
+  <Tab title="Code Request">
+    **You (voice):** "Create a Python script that fetches data from an API and saves it to a CSV file"
+    
+    **Bot:** "I'll create a Python script for you at ~/.miniclaw/workspace/fetch_data.py..."
+  </Tab>
+  
+  <Tab title="File Operation">
+    **You (voice):** "Clone the miniclaw repository and show me the project structure"
+    
+    **Bot:** "I'll clone the repository to ~/.miniclaw/workspace/..."
+  </Tab>
+</Tabs>
+
+## Transcription Language
+
+By default, the transcription is configured for English (`language=en`). This improves accuracy for English voice messages.
+
+If you need to transcribe other languages, you can ask the agent to modify the transcription skill:
+
+```text
+You: Update the transcription skill to support Spanish
+```
+
+The agent will edit `../.claude/skills/transcribe/SKILL.md` to change the language parameter.
+
+## The /transcribe Skill
+
+The transcription functionality is implemented as a Claude skill located at:
+
+```
+../.claude/skills/transcribe/SKILL.md
+```
+
+This skill is automatically invoked when the agent receives an audio file. It:
+
+1. Identifies the audio file path from the conversation context
+2. Sends the file to Groq's Whisper API
+3. Extracts the transcribed text from the JSON response
+4. Treats the transcript as a normal text message
+
+### Manual Invocation
+
+While the skill is typically invoked automatically, you can also manually trigger transcription:
+
+```text
+You: Transcribe the audio file I sent earlier
+```
+
+The agent will locate the audio file from the conversation history and transcribe it.
+
+## Troubleshooting
+
+### "GROQ_API_KEY not set"
+
+**Problem:** The environment variable is missing.
+
+**Solution:** Set `GROQ_API_KEY` before starting miniclaw:
+
+```bash
+export GROQ_API_KEY="gsk_your_key_here"
+miniclaw
+```
+
+### "Transcription failed"
+
+**Possible causes:**
+
+- Invalid or expired API key
+- Network connection issues
+- Unsupported audio format
+- Audio file corrupted during download
+
+**Solution:** Check:
+
+```bash
+# Verify API key is set
+echo $GROQ_API_KEY
+
+# Test API access
+curl -s https://api.groq.com/openai/v1/models \
+  -H "Authorization: Bearer $GROQ_API_KEY"
+```
+
+### Audio Quality
+
+For best transcription results:
+
+- Speak clearly and at a moderate pace
+- Minimize background noise
+- Use a good microphone if possible
+- Keep messages under 2 minutes for faster processing
+
+<Tip>
+The Whisper model (`whisper-large-v3-turbo`) is quite robust and handles various accents, background noise, and speaking styles well.
+</Tip>

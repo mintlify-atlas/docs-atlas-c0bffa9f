@@ -1,0 +1,133 @@
+---
+title: Setup Skill
+description: Interactive setup wizard for configuring miniclaw
+---
+
+## Overview
+
+The `/setup` skill is an interactive wizard that helps new users configure miniclaw after forking the repository. It walks you through checking prerequisites, installing dependencies, configuring environment variables, and optionally setting up the background service.
+
+## Usage
+
+Send this command to your bot:
+
+```bash
+/setup
+```
+
+The skill is **idempotent**—it's safe to run multiple times. It will check existing configuration and only prompt for missing or incorrect values.
+
+## What It Does
+
+The setup wizard guides you through these steps:
+
+### 1. Prerequisites Check
+- **Go 1.23+**: Verifies Go is installed and at the correct version
+- **Claude CLI**: Confirms the Claude CLI is available (required for the agent runtime)
+
+### 2. Dependency Installation
+- Runs `go mod tidy` to fetch all Go dependencies
+- Installs the `miniclaw` binary to `$GOPATH/bin`
+
+### 3. Runtime Directory Setup
+- Creates `~/.miniclaw/data/tasks/` for scheduled tasks
+- Creates `~/.miniclaw/workspace/` for agent workspace
+
+### 4. Agent Personalization
+- Reads `agent/preferences.md`
+- Allows you to customize the agent's name and timezone
+
+### 5. Telegram Configuration
+- **Bot Token**: Guides you through creating a bot via [@BotFather](https://t.me/BotFather)
+- **Allowed Chat IDs**: Configures which chats can interact with the bot
+- **Agent Directory**: Sets the absolute path to your `agent/` directory
+
+### 6. Optional Groq API Key
+- Required for voice message transcription
+- Sign up at [console.groq.com](https://console.groq.com)
+- Free tier: 2,000 requests/day, 8 hours of audio/day
+
+### 7. Environment File
+- Writes `~/.miniclaw/.env` with all configuration
+- Sets secure `0600` permissions
+- Merges with existing values if the file already exists
+
+### 8. Background Service (Optional)
+
+**Linux (systemd)**:
+- Creates `~/.config/systemd/user/miniclaw.service`
+- Enables automatic start on login
+- Sets up lingering so it runs even when logged out
+
+**macOS (launchd)**:
+- Creates `~/Library/LaunchAgents/com.miniclaw.agent.plist`
+- Configures automatic start and keep-alive
+- Sets up logging to `/tmp/miniclaw.log`
+
+### 9. Command Registration (Optional)
+- Registers all skills with Telegram
+- Makes commands appear in the `/` menu
+- Uses the `setMyCommands` API
+
+## Requirements
+
+- Go 1.23 or later
+- Claude CLI installed and authenticated
+- Telegram bot token (from [@BotFather](https://t.me/BotFather))
+- (Optional) Groq API key for voice transcription
+
+## Managing the Service
+
+### Linux (systemd)
+
+```bash
+# Check status
+systemctl --user status miniclaw
+
+# Restart after config changes
+systemctl --user restart miniclaw
+
+# View logs
+journalctl --user -u miniclaw -f
+```
+
+### macOS (launchd)
+
+```bash
+# Check status
+launchctl list | grep com.miniclaw.agent
+
+# Restart
+launchctl kickstart -k gui/$(id -u)/com.miniclaw.agent
+
+# View logs
+tail -f /tmp/miniclaw.log
+```
+
+## Getting Your Chat ID
+
+After setup, send `/chatid` to your bot to get your Telegram chat ID. Add it to `~/.miniclaw/.env` as:
+
+```bash
+ALLOWED_CHAT_IDS=123456789
+```
+
+For multiple chats, use comma-separated values:
+
+```bash
+ALLOWED_CHAT_IDS=123456789,-1001234567890
+```
+
+Note: Group chats have negative IDs, private chats have positive IDs.
+
+## Allowed Tools
+
+The setup skill can use:
+- `Read`, `Edit`: For reading and modifying configuration files
+- `Bash(go *)`: For Go commands
+- `Bash(which *)`, `Bash(ls *)`, `Bash(cat *)`: For checking paths and files
+- `Bash(chmod *)`: For setting file permissions
+- `Bash(systemctl *)`, `Bash(loginctl *)`: For systemd setup (Linux)
+- `Bash(launchctl *)`: For launchd setup (macOS)
+- `Bash(curl *)`, `Bash(uname *)`: For API calls and platform detection
+- `Bash(claude *)`, `Bash(mkdir *)`: For Claude CLI checks and directory creation

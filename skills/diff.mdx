@@ -1,0 +1,169 @@
+---
+title: Diff Skill
+description: Review git changes and plan commits
+---
+
+## Overview
+
+The `/diff` skill reviews your current git diff in the miniclaw repository, runs CI checks, analyzes the changes, and suggests how to group them into logical commits following the repo's commit conventions.
+
+## Usage
+
+From any chat with your bot, send:
+
+```bash
+/diff
+```
+
+The skill works best when you have uncommitted changes in your miniclaw repository.
+
+## What It Does
+
+### 1. Announce Repository
+Starts by showing the absolute path to the git repository root:
+
+```bash
+git rev-parse --show-toplevel
+```
+
+### 2. Gather Git State
+
+Collects comprehensive information about your working tree:
+
+```bash
+# See modified, staged, and untracked files
+git status
+
+# View unstaged changes
+git diff
+
+# View staged changes
+git diff --staged
+
+# Check recent commit style
+git log --oneline -5
+```
+
+### 3. Run CI Checks
+
+Performs the same checks that run in continuous integration:
+
+**Code Formatting:**
+```bash
+gofmt -l .
+```
+If any files need formatting, automatically fixes them with `gofmt -w`.
+
+**Tests:**
+```bash
+go test ./...
+```
+Reports any test failures that need to be addressed.
+
+### 4. Code Review
+
+Analyzes the diff for:
+- Bugs, logic errors, or edge cases
+- Missing error handling
+- Performance concerns
+- Code style issues or inconsistencies
+
+Reports findings or confirms the diff looks clean.
+
+### 5. Analyze Changes
+
+For each modified file, provides a brief description of:
+- What changed
+- Why it changed (inferred from the code)
+
+### 6. Suggest Commits
+
+Groups related changes into logical commits following conventional commit format:
+- `feat:` — New features
+- `fix:` — Bug fixes
+- `chore:` — Maintenance tasks
+- `docs:` — Documentation changes
+- `style:` — Code style/formatting
+- `refactor:` — Code restructuring
+- `test:` — Test changes
+
+For each suggested commit:
+- Lists files to include
+- Provides a descriptive commit message
+
+### 7. Offer to Proceed
+
+Asks if you want the agent to:
+- Commit the changes as suggested
+- Push to the remote repository
+- Adjust the grouping
+
+## Example Output
+
+```
+Repository: /home/user/miniclaw
+
+✓ Code formatting: All files properly formatted
+✓ Tests: All tests passing
+
+Changes:
+- cmd/miniclaw/main.go: Added graceful shutdown handling
+- internal/telegram/bot.go: Improved error messages for rate limiting
+- internal/scheduler/task.go: Fixed race condition in task cancellation
+
+Suggested commits:
+
+1. fix: handle race condition in task cancellation
+   Files: internal/scheduler/task.go
+
+2. feat: add graceful shutdown to main process
+   Files: cmd/miniclaw/main.go
+
+3. chore: improve telegram rate limit error messages
+   Files: internal/telegram/bot.go
+
+Would you like me to commit and push these changes?
+```
+
+## Requirements
+
+- miniclaw repository must be a git repository
+- Must have uncommitted changes to review
+- Go and gofmt must be available for CI checks
+
+## Allowed Tools
+
+The diff skill can use:
+- `Bash(git *)`: For all git operations
+- `Bash(gofmt *)`: For checking and fixing code formatting
+- `Bash(go test *)`: For running tests
+
+## Best Practices
+
+### When to Use
+
+- **Before committing**: Review changes and get commit suggestions
+- **After bulk changes**: Understand what you modified and organize it logically
+- **Code review**: Get automated feedback on code quality
+- **CI debugging**: Catch formatting and test issues before pushing
+
+### Workflow
+
+1. Make changes to your miniclaw fork
+2. Run `/diff` to review and get commit suggestions
+3. Let the agent commit and push, or adjust the grouping
+4. Address any CI check failures
+5. Iterate until clean
+
+## Related Commands
+
+After reviewing and committing changes, you might want to:
+- `/restart` — Deploy changes to the running bot
+- Check the repository on GitHub to verify the push
+
+## Limitations
+
+- Only reviews the miniclaw repository
+- Cannot create branches or handle merge conflicts
+- Assumes you want to follow conventional commit format
+- CI checks are limited to `gofmt` and `go test`

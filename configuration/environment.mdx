@@ -1,0 +1,138 @@
+---
+title: Environment Variables
+description: Configure miniclaw using environment variables in your .env file
+---
+
+miniclaw loads configuration from environment variables, typically stored in `~/.miniclaw/.env`. The configuration is loaded during startup from `internal/config.go`.
+
+## .env File Location
+
+The `.env` file should be placed at:
+
+```
+~/.miniclaw/.env
+```
+
+This file is automatically loaded when miniclaw starts. The directory structure is created automatically on first run.
+
+## Required Variables
+
+<ParamField path="TELEGRAM_BOT_TOKEN" type="string" required>
+  Your Telegram bot token obtained from [@BotFather](https://t.me/BotFather).
+  
+  The bot will not start without this token. See [Telegram Setup](/configuration/telegram-setup) for instructions on obtaining a token.
+  
+  **Example:**
+  ```
+  TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+  ```
+</ParamField>
+
+## Optional Variables
+
+<ParamField path="ALLOWED_CHAT_IDS" type="string" default="">
+  Comma-separated list of Telegram chat IDs that are allowed to interact with the bot.
+  
+  If not set, the bot will respond to all chats. For security, it's recommended to set this to restrict access to your personal chat or specific groups.
+  
+  - Positive IDs are private chats
+  - Negative IDs are group chats
+  
+  **Example:**
+  ```
+  ALLOWED_CHAT_IDS=123456789,-1001234567890
+  ```
+  
+  Use the `/chatid` command in Telegram to find your chat ID. See [Telegram Setup](/configuration/telegram-setup) for details.
+</ParamField>
+
+<ParamField path="MINICLAW_AGENT_DIR" type="string" default="./agent">
+  Path to the directory containing the agent configuration files (`CLAUDE.md` and `preferences.md`).
+  
+  If not set, miniclaw looks for an `agent/` directory in the current working directory. This variable is useful if you want to run miniclaw from a different location or use a custom agent configuration.
+  
+  **Example:**
+  ```
+  MINICLAW_AGENT_DIR=/home/user/my-custom-agent
+  ```
+</ParamField>
+
+<ParamField path="GROQ_API_KEY" type="string" default="">
+  API key for [Groq](https://console.groq.com/) used for voice message transcription.
+  
+  If not set, voice message transcription will not be available. The agent uses Groq's API to transcribe audio files sent via Telegram.
+  
+  **Example:**
+  ```
+  GROQ_API_KEY=gsk_abcdefghijklmnopqrstuvwxyz1234567890
+  ```
+  
+  Get your API key from the [Groq Console](https://console.groq.com/).
+</ParamField>
+
+<ParamField path="SHOW_STATUS_UPDATES" type="boolean" default="false">
+  Controls whether the bot sends real-time status updates while processing requests.
+  
+  When enabled, you'll see live updates as the agent thinks and works. When disabled, you'll only receive the final response.
+  
+  **Example:**
+  ```
+  SHOW_STATUS_UPDATES=true
+  ```
+  
+  Accepts: `true`, `false`, `1`, `0`, `yes`, `no`
+</ParamField>
+
+## Example .env File
+
+Here's a complete example configuration:
+
+```bash
+# Required
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+
+# Security: restrict to your chat ID
+ALLOWED_CHAT_IDS=123456789
+
+# Optional: custom agent directory
+# MINICLAW_AGENT_DIR=/path/to/custom/agent
+
+# Optional: enable voice transcription
+GROQ_API_KEY=gsk_abcdefghijklmnopqrstuvwxyz1234567890
+
+# Optional: show real-time updates
+SHOW_STATUS_UPDATES=true
+```
+
+## Directory Structure
+
+miniclaw creates the following directory structure at `~/.miniclaw/` on first run:
+
+```
+~/.miniclaw/
+├── .env                 # Configuration file (you create this)
+├── data/                # Persistent data
+│   ├── tasks/          # Scheduled task definitions
+│   ├── user.md         # User profile (created by agent)
+│   └── sessions.json   # Telegram conversation sessions
+└── workspace/          # Scratch space for file operations
+```
+
+## Changing Configuration
+
+To change configuration:
+
+1. Edit `~/.miniclaw/.env`
+2. Restart miniclaw:
+   ```bash
+   # If running in terminal
+   Ctrl+C and restart
+   
+   # If running as a service
+   sudo systemctl restart miniclaw  # Linux
+   launchctl kickstart -k gui/$(id -u)/com.miniclaw.bot  # macOS
+   ```
+
+<Note>
+  If you're running miniclaw as a system service, remember that changes to `.env` won't take effect until you restart the service.
+</Note>
