@@ -1,0 +1,94 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "miniclaw",
+  "projectDescription": "A minimal and easily hackable OpenClaw alternative that wraps Claude CLI as a Telegram bot with persistent sessions and scheduled tasks.",
+  "theme": "aspen",
+  "primaryColor": "#7C3AED",
+  "lightColor": "#A78BFA",
+  "darkColor": "#5B21B6",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/sessions",
+              "concepts/scheduler",
+              "concepts/skills"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment",
+              "configuration/agent-customization",
+              "configuration/telegram-setup"
+            ]
+          },
+          {
+            "group": "Usage Guide",
+            "pages": [
+              "usage/messaging",
+              "usage/file-operations",
+              "usage/voice-messages",
+              "usage/scheduled-tasks"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Built-in Skills",
+            "pages": [
+              "skills/overview",
+              "skills/setup",
+              "skills/commands",
+              "skills/restart",
+              "skills/diff",
+              "skills/transcribe"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/project-structure",
+              "development/customization",
+              "development/contributing"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Persistent Telegram sessions per chat with reply context",
+    "Scheduled tasks (cron, interval, one-shot) stored as JSON files",
+    "File, image, and voice message support with transcription",
+    "Extensible skill system via slash commands",
+    "Real-time status updates during agent execution",
+    "Self-modifiable codebase that agent can edit at runtime"
+  ],
+  "publicApiSurface": [
+    "/setup - Interactive setup wizard",
+    "/commands - Register bot commands with Telegram",
+    "/restart - Restart the miniclaw service",
+    "/diff - Show git diff of repository",
+    "/transcribe - Transcribe voice messages",
+    "/chatid - Get Telegram chat ID",
+    "/cancel - Cancel current request",
+    "/compact - Compact conversation context"
+  ]
+}
