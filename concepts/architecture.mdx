@@ -106,7 +106,7 @@ cmd.Env = append(os.Environ(), fmt.Sprintf("MINICLAW_CHAT_ID=%d", input.ChatID))
 
 Executes scheduled tasks (`internal/scheduler.go`):
 
-- Polls `data/tasks/*.json` every `scheduler_interval` (default: 30s)
+- Polls `data/tasks/*.json` every 10 seconds
 - Executes tasks where `next_run` has passed
 - Reschedules recurring tasks (cron, interval)
 - Deletes one-time tasks and expired tasks
@@ -195,10 +195,8 @@ miniclaw reads configuration from environment variables:
 TELEGRAM_BOT_TOKEN=your_token_here
 ALLOWED_CHAT_IDS=123456789,987654321  # Comma-separated
 MINICLAW_AGENT_DIR=/path/to/agent
-MINICLAW_WORKSPACE_DIR=/path/to/workspace
-MINICLAW_DATA_DIR=/path/to/data
-SCHEDULER_INTERVAL=30s
 SHOW_STATUS_UPDATES=true
+GROQ_API_KEY=your_groq_key_here  # Optional, for voice transcription
 ```
 
 See the [Configuration](/configuration/environment) page for complete details.
